@@ -1,21 +1,31 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'theme.dart';
 import 'screens/splash_screen.dart';
-
-void main() {
-  runApp(const SalonApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+  final isDarkMode = prefs.getBool('isDarkMode') ?? false;
+  runApp(SalonApp(initialDarkMode: isDarkMode));
 }
-
 class SalonApp extends StatefulWidget {
-  const SalonApp({super.key});
-
+  final bool initialDarkMode;
+  const SalonApp({super.key, required this.initialDarkMode});
   @override
   State<SalonApp> createState() => _SalonAppState();
 }
-
 class _SalonAppState extends State<SalonApp> {
-  bool isDarkMode = false;
-
+  late bool isDarkMode;
+  @override
+  void initState() {
+    super.initState();
+    isDarkMode = widget.initialDarkMode;
+  }
+  Future<void> _toggleTheme() async {
+    setState(() => isDarkMode = !isDarkMode);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isDarkMode', isDarkMode);
+  }
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -24,7 +34,7 @@ class _SalonAppState extends State<SalonApp> {
       theme: lightTheme,
       darkTheme: darkTheme,
       themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      home: SplashScreen(),
+      home: SplashScreen(onToggleTheme: _toggleTheme),
     );
   }
 }

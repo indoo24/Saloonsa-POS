@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import '../../../theme.dart';
 import '../../widgets/gradiant_background.dart';
@@ -20,27 +19,39 @@ class _CashierScreenState extends State<CashierScreen> {
   String selectedCategory = "قص الشعر";
   List<ServiceModel> cart = [];
 
-  List<ServiceModel> get filteredServices => allServices
-      .where((s) => s.category == selectedCategory)
-      .toList();
+  List<ServiceModel> get filteredServices =>
+      allServices.where((s) => s.category == selectedCategory).toList();
 
   void addToCart(ServiceModel service) {
     setState(() => cart.add(service));
   }
 
+  void removeFromCart(int index) {
+    setState(() => cart.removeAt(index));
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       appBar: AppBar(
         title: const Text("شاشة الكاشير 💈"),
         actions: [
+          IconButton(
+            tooltip: isDarkMode
+                ? "التبديل إلى الوضع الفاتح"
+                : "التبديل إلى الوضع الداكن",
+            icon: Icon(isDarkMode ? Icons.light_mode : Icons.dark_mode),
+            onPressed: widget.onToggleTheme,
+          ),
           IconButton(
             icon: const Icon(Icons.receipt_long),
             onPressed: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => InvoicePage(cart: cart),
+                  builder: (_) =>
+                      InvoicePage(cart: List<ServiceModel>.from(cart)),
                 ),
               );
             },
@@ -80,11 +91,15 @@ class _CashierScreenState extends State<CashierScreen> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(service.name,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold, fontSize: 16)),
+                            Text(
+                              service.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
                             const SizedBox(height: 5),
-                            Text("${service.price.toStringAsFixed(0)} ج.م"),
+                            Text("${service.price.toStringAsFixed(0)}   ر.س"),
                           ],
                         ),
                       ),
@@ -93,6 +108,41 @@ class _CashierScreenState extends State<CashierScreen> {
                 },
               ),
             ),
+            if (cart.isNotEmpty) ...[
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    "الخدمات المختارة",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              Container(
+                width: double.infinity,
+                margin:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: List.generate(cart.length, (index) {
+                    final service = cart[index];
+                    return InputChip(
+                      label: Text(service.name),
+                      deleteIcon: const Icon(Icons.close),
+                      onDeleted: () => removeFromCart(index),
+                    );
+                  }),
+                ),
+              ),
+            ],
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
               child: ElevatedButton.icon(
@@ -108,7 +158,8 @@ class _CashierScreenState extends State<CashierScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => InvoicePage(cart: cart),
+                      builder: (_) =>
+                          InvoicePage(cart: List<ServiceModel>.from(cart)),
                     ),
                   );
                 },
@@ -120,4 +171,3 @@ class _CashierScreenState extends State<CashierScreen> {
     );
   }
 }
-

@@ -34,7 +34,7 @@ class InvoicePage extends StatelessWidget {
                         return ListTile(
                           leading: const Icon(Icons.cut),
                           title: Text(s.name),
-                          trailing: Text("${s.price} ج.م"),
+                          trailing: Text("${s.price} ر.س"),
                         );
                       },
                     ),
@@ -44,14 +44,14 @@ class InvoicePage extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text("الإجمالي الفرعي:"),
-                      Text("${subtotal.toStringAsFixed(2)} ج.م"),
+                      Text("${subtotal.toStringAsFixed(2)} ر.س"),
                     ],
                   ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text("الضريبة (15%):"),
-                      Text("${tax.toStringAsFixed(2)} ج.م"),
+                      Text("${tax.toStringAsFixed(2)}   ر.س"),
                     ],
                   ),
                   const Divider(),
@@ -60,7 +60,7 @@ class InvoicePage extends StatelessWidget {
                     children: [
                       const Text("الإجمالي الكلي:",
                           style: TextStyle(fontWeight: FontWeight.bold)),
-                      Text("${total.toStringAsFixed(2)} ج.م",
+                      Text("${total.toStringAsFixed(2)} ر.س",
                           style: const TextStyle(fontWeight: FontWeight.bold)),
                     ],
                   ),

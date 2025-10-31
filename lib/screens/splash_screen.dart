@@ -3,7 +3,8 @@ import '../../theme.dart';
 import 'casher/casher_screen.dart';
 
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
+  final VoidCallback onToggleTheme;
+  const SplashScreen({super.key, required this.onToggleTheme});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -24,10 +25,11 @@ class _SplashScreenState extends State<SplashScreen>
     _controller.forward();
 
     Future.delayed(const Duration(seconds: 3), () {
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => CashierScreen(onToggleTheme: () {}),
+          builder: (_) => CashierScreen(onToggleTheme: widget.onToggleTheme),
         ),
       );
     });
