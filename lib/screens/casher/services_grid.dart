@@ -9,11 +9,11 @@ class ServicesGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final services = [
-      ServiceModel(name: "تصفيف وقص الشعر", price: 20, category: ''),
-      ServiceModel(name: "تنعيم وتجميد الشعر", price: 44, category: ''),
+      ServiceModel(name: "تصفيف وقص الشعر", price: 20, category: 'قص الشعر'),
+      ServiceModel(name: "تنعيم وتجميد الشعر", price: 44, category: 'قص الشعر'),
       ServiceModel(name: "قص الشعر", price: 15, category: ''),
       ServiceModel(name: "صبغ وتلوين الشعر", price: 18, category: ''),
-      ServiceModel(name: "تسريحة حفلات", price: 30, category: ''),
+      ServiceModel(name: "تسريحة حفلات", price: 30, category: 'تسريحة'),
       ServiceModel(name: "تنظيف وجه", price: 25, category: ''),
     ];
 

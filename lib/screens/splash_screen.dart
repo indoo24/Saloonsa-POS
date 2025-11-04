@@ -1,3 +1,4 @@
+import 'package:barber_casher/screens/auth/login_screen.dart';
 import 'package:flutter/material.dart';
 import '../../theme.dart';
 import 'casher/casher_screen.dart';
@@ -29,7 +30,7 @@ class _SplashScreenState extends State<SplashScreen>
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => CashierScreen(onToggleTheme: widget.onToggleTheme),
+          builder: (_) => LoginScreen(onToggleTheme: widget.onToggleTheme),
         ),
       );
     });
@@ -41,7 +42,7 @@ class _SplashScreenState extends State<SplashScreen>
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [brandGold, Color(0xFFFFE082)],
+            colors: [brandBlue, Color(0xFFD5D3CE)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
