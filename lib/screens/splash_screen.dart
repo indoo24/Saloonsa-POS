@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../theme.dart';
-import 'casher/casher_screen.dart';
+
+import 'casher/home_page.dart';
 
 class SplashScreen extends StatefulWidget {
   final VoidCallback onToggleTheme;
+
   const SplashScreen({super.key, required this.onToggleTheme});
 
   @override
@@ -20,7 +21,7 @@ class _SplashScreenState extends State<SplashScreen>
     super.initState();
     _controller =
         AnimationController(vsync: this, duration: const Duration(seconds: 2));
-    _fadeIn = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
+    _fadeIn = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
 
     _controller.forward();
 
@@ -29,19 +30,30 @@ class _SplashScreenState extends State<SplashScreen>
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => CashierScreen(onToggleTheme: widget.onToggleTheme),
+          builder: (_) => HomePage(onToggleTheme: widget.onToggleTheme),
         ),
       );
     });
   }
 
   @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [brandGold, Color(0xFFFFE082)],
+            colors: [
+              colorScheme.primaryContainer.withOpacity(0.9),
+              colorScheme.primary,
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -51,21 +63,22 @@ class _SplashScreenState extends State<SplashScreen>
           child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: const [
-                Icon(Icons.cut, size: 100, color: Colors.black),
-                SizedBox(height: 20),
+              children: [
+                Icon(Icons.cut, size: 100, color: colorScheme.onPrimary),
+                const SizedBox(height: 20),
                 Text(
-                  "Salon POS",
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
+                  'Salon POS',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                        color: colorScheme.onPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
                 ),
-                SizedBox(height: 10),
+                const SizedBox(height: 10),
                 Text(
-                  "by Yousef",
-                  style: TextStyle(color: Colors.black54),
+                  'by Yousef',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: colorScheme.onPrimary.withOpacity(0.85),
+                      ),
                 ),
               ],
             ),
