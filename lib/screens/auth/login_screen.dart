@@ -1,26 +1,35 @@
-import 'package:barber_casher/screens/casher/casher_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../casher/casher_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final VoidCallback onToggleTheme;
+  final String? subdomain;
 
-
-  const LoginScreen({super.key, required this.onToggleTheme});
+  const LoginScreen({super.key, required this.onToggleTheme, this.subdomain});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-
   final _formKey = GlobalKey<FormState>();
   bool _isPasswordObscured = true;
+  bool _showSubdomain = true;
 
-  // Controllers for text fields
   final _subdomainController = TextEditingController();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _showSubdomain = widget.subdomain == null;
+    if (widget.subdomain != null) {
+      _subdomainController.text = widget.subdomain!;
+    }
+  }
 
   @override
   void dispose() {
@@ -30,33 +39,29 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _login() {
+  Future<void> _login() async {
     if (_formKey.currentState!.validate()) {
-      // TODO: Implement login API logic here
-      // final subdomain = _subdomainController.text;
-      // final username = _usernameController.text;
-      // final password = _passwordController.text;
+      // Save subdomain if it was entered
+      if (_showSubdomain) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('subdomain', _subdomainController.text);
+      }
+
+      // TODO: Implement actual login logic
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Logging in...')),
+      );
+      // Navigate to cashier screen on successful login
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => CashierScreen(onToggleTheme: widget.onToggleTheme)),
       );
     }
   }
 
-  void _continueAsGuest() {
-
-    // TODO: Implement guest navigation logic
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Continuing as guest...')),
-    );
-    Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => CashierScreen(onToggleTheme: widget.onToggleTheme)));
-  }
-
   @override
   Widget build(BuildContext context) {
-
     final theme = Theme.of(context);
-    final isDarkMode = theme.brightness == Brightness.dark;
-    final screenWidth = MediaQuery.of(context).size.width;
 
     return Scaffold(
       body: Center(
@@ -70,7 +75,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // App Logo
                   Icon(
                     Icons.shield_moon_outlined,
                     size: 80,
@@ -80,10 +84,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   Text(
                     'مرحباً بك مجدداً',
                     textAlign: TextAlign.center,
-                    style: GoogleFonts.cairo(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: GoogleFonts.cairo(fontSize: 26, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -92,29 +93,24 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: theme.textTheme.titleMedium,
                   ),
                   const SizedBox(height: 32),
-
-                  // Subdomain Field
-                  TextFormField(
-                    controller: _subdomainController,
-                    decoration: InputDecoration(
-                      labelText: 'النطاق الفرعي',
-                      prefixText: 'https://',
-                      suffixText: '.saloonsa.com',
-                      border: const OutlineInputBorder(),
-                      prefixStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6)),
-                      suffixStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.6)),
+                  if (_showSubdomain)
+                    TextFormField(
+                      controller: _subdomainController,
+                      decoration: InputDecoration(
+                        labelText: 'النطاق الفرعي',
+                        prefixText: 'https://',
+                        suffixText: '.myapp.com',
+                        border: const OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.text,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'الرجاء إدخال النطاق الفرعي';
+                        }
+                        return null;
+                      },
                     ),
-                    keyboardType: TextInputType.text,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'الرجاء إدخال النطاق الفرعي';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Username Field
+                  if (_showSubdomain) const SizedBox(height: 16),
                   TextFormField(
                     controller: _usernameController,
                     decoration: const InputDecoration(
@@ -131,8 +127,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     },
                   ),
                   const SizedBox(height: 16),
-
-                  // Password Field
                   TextFormField(
                     controller: _passwordController,
                     obscureText: _isPasswordObscured,
@@ -158,9 +152,15 @@ class _LoginScreenState extends State<LoginScreen> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 30),
-
-                  // Login Button
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      onPressed: () {},
+                      child: const Text('هل نسيت كلمة المرور؟'),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -168,18 +168,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     onPressed: _login,
                     child: const Text('تسجيل الدخول'),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Continue as Guest Button
-                  OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      textStyle: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold),
-                      side: BorderSide(color: theme.colorScheme.primary),
-                    ),
-                    onPressed: _continueAsGuest,
-                    child: const Text('المتابعة كزائر'),
                   ),
                 ],
               ),

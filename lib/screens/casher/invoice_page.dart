@@ -1,43 +1,92 @@
+import 'dart:io';
+
+import 'package:barber_casher/screens/casher/print_dirct.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
-import 'models/service-model.dart';
 import 'pdf_invoice.dart';
+import 'models/customer.dart';
+import 'models/service-model.dart';
 
 class InvoicePage extends StatefulWidget {
   final List<ServiceModel> cart;
-  const InvoicePage({super.key, required this.cart});
+  final Customer? customer;
+
+  const InvoicePage({super.key, required this.cart, this.customer});
 
   @override
   State<InvoicePage> createState() => _InvoicePageState();
 }
 
 class _InvoicePageState extends State<InvoicePage> {
-  final _discountController = TextEditingController();
-  double _discountPercentage = 0.0;
+  final _discountController = TextEditingController(text: '0');
+  final _cashierNameController = TextEditingController(text: 'Yousef');
+  String _paymentMethod = 'نقدي';
+
+  double _discount = 0.0;
 
   @override
   void initState() {
     super.initState();
-    _discountController.addListener(_onDiscountChanged);
+    _discountController.addListener(() {
+      setState(() {
+        _discount = double.tryParse(_discountController.text) ?? 0.0;
+      });
+    });
   }
 
   @override
   void dispose() {
-    _discountController.removeListener(_onDiscountChanged);
     _discountController.dispose();
+    _cashierNameController.dispose();
     super.dispose();
   }
 
-  void _onDiscountChanged() {
-    setState(() {
-      _discountPercentage = double.tryParse(_discountController.text) ?? 0.0;
-    });
+  // Future<void> _handlePrint() async {
+  //   final pdfData = await generateInvoicePdf(
+  //     customer: widget.customer,
+  //     services: widget.cart,
+  //     discount: _discount,
+  //     cashierName: _cashierNameController.text,
+  //     paymentMethod: _paymentMethod,
+  //   );
+  //   await Printing.layoutPdf(onLayout: (_) => pdfData);
+  // }
+  Future<bool> tryConnectToPrinter() async {
+    try {
+      final socket = await Socket.connect('192.168.1.123', 9100, timeout: const Duration(seconds: 3));
+      socket.destroy();
+      return true;
+    } catch (e) {
+      print('❌ الطابعة غير متصلة: $e');
+      return false;
+    }
   }
-
-  IconData _getIconForService(String serviceName) {
-    // ... (keep the same icon logic)
-    return Icons.cut;
+  Future<void> _handlePrint() async {
+    try {
+      final connected = await tryConnectToPrinter();
+      if (connected) {
+        await printInvoiceDirect(
+          customer: widget.customer,
+          services: widget.cart,
+          discount: _discount,
+          cashierName: _cashierNameController.text,
+          paymentMethod: _paymentMethod,
+        );
+      } else {
+        final pdfData = await generateInvoicePdf(
+          customer: widget.customer,
+          services: widget.cart,
+          discount: _discount,
+          cashierName: _cashierNameController.text,
+          paymentMethod: _paymentMethod,
+        );
+        await Printing.layoutPdf(onLayout: (_) => pdfData);
+      }
+    } catch (e) {
+      print('حدث خطأ أثناء الطباعة: $e');
+    }
   }
 
   @override
@@ -46,61 +95,31 @@ class _InvoicePageState extends State<InvoicePage> {
     final subtotal = widget.cart.fold<double>(0, (sum, item) => sum + item.price);
     final tax = subtotal * 0.15;
     final totalBeforeDiscount = subtotal + tax;
-    final discountAmount = totalBeforeDiscount * (_discountPercentage / 100);
+    final discountAmount = totalBeforeDiscount * (_discount / 100);
     final finalTotal = totalBeforeDiscount - discountAmount;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text("الفاتورة 💵", style: theme.appBarTheme.titleTextStyle),
+        title: Text("إصدار الفاتورة", style: theme.appBarTheme.titleTextStyle),
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(
-              child: Card(
-                child: ListView.builder(
-                  itemCount: widget.cart.length,
-                  itemBuilder: (context, index) {
-                    final service = widget.cart[index];
-                    return ListTile(
-                      leading: Icon(_getIconForService(service.name), color: theme.colorScheme.secondary),
-                      title: Text(service.name, style: theme.textTheme.bodyLarge),
-                      trailing: Text(
-                        "${service.price.toStringAsFixed(0)} ر.س",
-                        style: GoogleFonts.cairo(
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.secondary,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildTotalsCard(
-              context,
-              subtotal: subtotal,
-              tax: tax,
-              discountAmount: discountAmount,
-              finalTotal: finalTotal,
-            ),
-            const SizedBox(height: 20),
+            _buildInfoSection(theme),
+            const SizedBox(height: 24),
+            _buildServicesTable(theme),
+            const SizedBox(height: 24),
+            _buildTotalsSection(theme, subtotal, tax, discountAmount, finalTotal),
+            const SizedBox(height: 32),
             ElevatedButton.icon(
-
               icon: const Icon(Icons.print_outlined),
-              label: const Text("حفظ وطباعة الفاتورة"),
+              label: const Text("طباعة الفاتورة"),
               style: theme.elevatedButtonTheme.style?.copyWith(
-                backgroundColor: MaterialStateProperty.all(Colors.green[800]),
-
                 minimumSize: MaterialStateProperty.all(const Size(double.infinity, 50)),
               ),
-              onPressed: () async {
-                // TODO: Pass discount info to PDF if needed
-                final pdfData = await generateInvoicePdf(widget.cart);
-                await Printing.layoutPdf(onLayout: (_) => pdfData);
-              },
+              onPressed: _handlePrint,
             ),
           ],
         ),
@@ -108,70 +127,138 @@ class _InvoicePageState extends State<InvoicePage> {
     );
   }
 
-  Widget _buildTotalsCard(BuildContext context, {
-    required double subtotal,
-    required double tax,
-    required double discountAmount,
-    required double finalTotal,
-  }) {
-    final theme = Theme.of(context);
+  Widget _buildInfoSection(ThemeData theme) {
     return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("تفاصيل الفاتورة", style: theme.textTheme.titleLarge),
+            const Divider(height: 24),
+            _buildInfoRow(theme, "العميل:", widget.customer?.name ?? "عميل كاش"),
+            _buildInfoRow(theme, "التاريخ:", DateFormat('yyyy-MM-dd').format(DateTime.now())),
+            _buildInfoRow(theme, "الكاشير:", null, controller: _cashierNameController),
+            _buildInfoRow(theme, "طريقة الدفع:", null, dropdown: _buildPaymentDropdown()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildServicesTable(ThemeData theme) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+           Padding(
+            padding: const EdgeInsets.only(top: 16, right: 16, left: 16),
+            child: Text("الخدمات", style: theme.textTheme.titleLarge),
+          ),
+          const Divider(height: 24),
+          Table(
+            columnWidths: const {
+              0: FlexColumnWidth(3),
+              1: FlexColumnWidth(2),
+              2: FlexColumnWidth(1.5),
+            },
+            children: [
+              TableRow(
+                decoration: BoxDecoration(border: Border(bottom: BorderSide(color: theme.dividerColor.withOpacity(0.5)))),
+                children: [
+                  Padding(padding: const EdgeInsets.all(8.0), child: Text("الخدمة", style: theme.textTheme.titleSmall)),
+                  Padding(padding: const EdgeInsets.all(8.0), child: Text("الحلاق", style: theme.textTheme.titleSmall)),
+                  Padding(padding: const EdgeInsets.all(8.0), child: Text("السعر", style: theme.textTheme.titleSmall, textAlign: TextAlign.right)),
+                ],
+              ),
+              ...widget.cart.map((service) => TableRow(
+                children: [
+                  Padding(padding: const EdgeInsets.all(8.0), child: Text(service.name)),
+                  Padding(padding: const EdgeInsets.all(8.0), child: Text(service.barber ?? 'N/A')),
+                  Padding(padding: const EdgeInsets.all(8.0), child: Text("${service.price.toStringAsFixed(2)} ر.س", textAlign: TextAlign.right)),
+                ],
+              )),
+            ],
+          ),
+           const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+  
+  Widget _buildTotalsSection(ThemeData theme, double subtotal, double tax, double discountAmount, double finalTotal) {
+    return Card(
+       elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            _buildTotalRow(context, "الإجمالي الفرعي:", "${subtotal.toStringAsFixed(2)} ر.س"),
-            const SizedBox(height: 12),
-            _buildTotalRow(context, "الضريبة (15%):", "${tax.toStringAsFixed(2)} ر.س"),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _discountController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: InputDecoration(
-                labelText: 'نسبة الخصم',
-                suffixText: '%',
-                border: const OutlineInputBorder(),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              ),
-            ),
+            _buildTotalRow(theme, "الإجمالي الفرعي:", "${subtotal.toStringAsFixed(2)} ر.س"),
+            const SizedBox(height: 8),
+            _buildTotalRow(theme, "Tax (15%):", "${tax.toStringAsFixed(2)} ر.س"),
+             const SizedBox(height: 8),
+            _buildInfoRow(theme, "خصم (%):", null, controller: _discountController, isNumeric: true),
+             const SizedBox(height: 8),
+            if (_discount > 0)
+              _buildTotalRow(theme, "مبلغ الخصم:", "-${discountAmount.toStringAsFixed(2)} ر.س", color: Colors.redAccent),
             const Divider(height: 24),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: child),
-              child: _discountPercentage > 0
-                  ? _buildTotalRow(context, "الخصم (${_discountPercentage.toStringAsFixed(1)}%):",
-                      "-${discountAmount.toStringAsFixed(2)} ر.س", color: Colors.redAccent)
-                  : const SizedBox.shrink(),
-            ),
-            if (_discountPercentage > 0) const SizedBox(height: 12),
-            _buildTotalRow(
-              context,
-              "الإجمالي الكلي:",
-              "${finalTotal.toStringAsFixed(2)} ر.س",
-              isBold: true,
-            ),
+            _buildTotalRow(theme, "الإجمالي النهائي:", "${finalTotal.toStringAsFixed(2)} ر.س", isBold: true),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTotalRow(BuildContext context, String title, String value, {bool isBold = false, Color? color}) {
-    final theme = Theme.of(context);
-    final textStyle = isBold
-        ? theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)
-        : theme.textTheme.bodyLarge;
+  Widget _buildPaymentDropdown() {
+    return DropdownButtonFormField<String>(
+      value: _paymentMethod,
+      decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+      onChanged: (String? newValue) {
+        if (newValue != null) {
+          setState(() => _paymentMethod = newValue);
+        }
+      },
+      items: <String>['نقدي', 'شبكة', 'تحويل'].map<DropdownMenuItem<String>>((String value) {
+        return DropdownMenuItem<String>(value: value, child: Text(value));
+      }).toList(),
+    );
+  }
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(title, style: textStyle?.copyWith(color: color)),
-        Text(value, style: textStyle?.copyWith(
-          color: color ?? (isBold ? theme.colorScheme.primary : theme.textTheme.bodyLarge?.color),
-          fontWeight: FontWeight.bold,
-          fontFamily: GoogleFonts.cairo().fontFamily,
-        )),
-      ],
+  Widget _buildInfoRow(ThemeData theme, String label, String? value, {TextEditingController? controller, Widget? dropdown, bool isNumeric = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(flex: 2, child: Text(label, style: theme.textTheme.titleMedium)),
+          Expanded(flex: 3, child: controller != null
+            ? TextFormField(
+                controller: controller, 
+                textAlign: TextAlign.right,
+                keyboardType: isNumeric ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
+                decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
+              )
+            : (dropdown ?? Text(value ?? '', style: theme.textTheme.bodyLarge))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTotalRow(ThemeData theme, String title, String value, {bool isBold = false, Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(title, style: GoogleFonts.cairo(fontWeight: isBold ? FontWeight.bold : FontWeight.normal, fontSize: isBold ? 18 : 16, color: color)),
+          Text(value, style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: isBold ? 18 : 16, color: color)),
+        ],
+      ),
     );
   }
 }
