@@ -1,8 +1,11 @@
 import 'package:barber_casher/screens/casher/header_section.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:toastification/toastification.dart';
+import 'cart_section.dart';
 import 'data/service_data.dart';
 import 'categories_section.dart';
+import 'models/customer.dart';
 import 'models/service-model.dart';
 import 'invoice_page.dart';
 
@@ -15,21 +18,120 @@ class CashierScreen extends StatefulWidget {
 }
 
 class _CashierScreenState extends State<CashierScreen> {
+  Customer? _selectedCustomer;
+  String? _selectedBarber;
+  final List<String> _barbers = ['أسامة', 'يوسف', 'محمد', 'أحمد'];
+
   String selectedCategory = "قص الشعر";
   List<ServiceModel> cart = [];
 
-  List<ServiceModel> get filteredServices =>
-      allServices.where((s) => s.category == selectedCategory).toList();
+  List<ServiceModel> get filteredServices {
+    return allServices.where((s) => s.category == selectedCategory).toList();
+  }
 
   void addToCart(ServiceModel service) {
-    setState(() => cart.add(service));
+    if (_selectedBarber == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('الرجاء اختيار الحلاق أولاً.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    final serviceToAdd = ServiceModel(
+        name: service.name,
+        price: service.price,
+        category: service.category,
+        barber: _selectedBarber);
+    setState(() => cart.add(serviceToAdd));
+
+    // Show a modern banner at the top
+     toastification.show(
+      context: context,
+      type: ToastificationType.success,
+      title: Text('تمت إضافة الخدمة بنجاح ✅'),
+      description: RichText(
+        text: TextSpan(
+          text: 'تمت إضافة "${service.name}" إلى السلة.',
+          style: TextStyle(
+            color: Colors.black87,
+            fontSize: 10,
+            fontFamily: 'Cairo',
+          ),
+        ),
+      ),
+      style: ToastificationStyle.fillColored,
+      autoCloseDuration: const Duration(seconds: 2),
+      alignment: Alignment.topRight,
+      direction: TextDirection.rtl,
+      animationDuration: const Duration(milliseconds: 300),
+      animationBuilder: (context, animation, alignment, child) {
+        return FadeTransition(opacity: animation, child: child);
+      },
+      icon: const Icon(Icons.check_circle_outline, color: Colors.green),
+      showIcon: true,
+      primaryColor: Colors.green,
+      backgroundColor: Colors.white,
+      foregroundColor: Colors.black87,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      borderRadius: BorderRadius.circular(12),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x07000000),
+          blurRadius: 16,
+          offset: Offset(0, 16),
+        ),
+      ],
+      showProgressBar: true,
+      closeButtonShowType: CloseButtonShowType.onHover,
+      closeOnClick: true,
+      pauseOnHover: true,
+      dragToClose: true,
+      applyBlurEffect: true,
+    );
+
+    void removeFromCart(int index) {
+      final removed = cart[index];
+      setState(() => cart.removeAt(index));
+
+      toastification.show(
+        context: context,
+        type: ToastificationType.error,
+        title: const Text('تم حذف الخدمة ❌'),
+        description: RichText(
+          text: TextSpan(
+            text: 'تم حذف "${removed.name}" من السلة.',
+            style: const TextStyle(color: Colors.black87, fontFamily: 'Cairo'),
+          ),
+        ),
+        alignment: Alignment.topRight,
+        direction: TextDirection.rtl,
+        autoCloseDuration: const Duration(seconds: 4),
+        primaryColor: Colors.red,
+        backgroundColor: Colors.white,
+        icon: const Icon(Icons.delete_forever, color: Colors.red),
+        style: ToastificationStyle.fillColored,
+        showProgressBar: true,
+        borderRadius: BorderRadius.circular(12),
+        applyBlurEffect: true,
+      );
+    }
+
+
+    // Auto-hide after 3 seconds
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentMaterialBanner();
+      }
+    });
   }
 
   void removeFromCart(int index) {
     setState(() => cart.removeAt(index));
   }
 
-  // Helper function to get icons for services
   IconData _getIconForCategory(String category) {
     switch (category) {
       case "قص الشعر":
@@ -56,12 +158,11 @@ class _CashierScreenState extends State<CashierScreen> {
     final isDarkMode = theme.brightness == Brightness.dark;
     final screenWidth = MediaQuery.of(context).size.width;
 
-    // Responsive grid cross-axis count
     final crossAxisCount = (screenWidth / 200).floor().clamp(2, 4);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text("شاشة الكاشير 💈", style: theme.appBarTheme.titleTextStyle),
+        title: Text(" الكاشير ", style: theme.appBarTheme.titleTextStyle),
         actions: [
           IconButton(
             tooltip: isDarkMode
@@ -80,6 +181,33 @@ class _CashierScreenState extends State<CashierScreen> {
       body: Column(
         children: [
           HeaderSection(
+            onCustomerSelected: (customer) {
+              setState(() {
+                _selectedCustomer = customer;
+              });
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: DropdownButtonFormField<String>(
+              value: _selectedBarber,
+              hint: const Text('اختر الحلاق'),
+              onChanged: (String? newValue) {
+                setState(() {
+                  _selectedBarber = newValue;
+                });
+              },
+              items: _barbers.map<DropdownMenuItem<String>>((String value) {
+                return DropdownMenuItem<String>(
+                  value: value,
+                  child: Text(value),
+                );
+              }).toList(),
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12),
+              ),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -129,7 +257,12 @@ class _CashierScreenState extends State<CashierScreen> {
               },
             ),
           ),
-          if (cart.isNotEmpty) _buildCartSection(context),
+          if (cart.isNotEmpty) CartSection(
+            cart: cart,
+            removeFromCart: removeFromCart,
+            selectedCustomer: _selectedCustomer,
+            navigateToInvoice: () => _navigateToInvoice(context),
+          ),
         ],
       ),
     );
@@ -139,64 +272,14 @@ class _CashierScreenState extends State<CashierScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => InvoicePage(cart: List<ServiceModel>.from(cart)),
-      ),
-    );
-  }
-
-  Widget _buildCartSection(BuildContext context) {
-    final theme = Theme.of(context);
-    final total = cart.fold<double>(0, (sum, item) => sum + item.price);
-
-    return Card(
-      margin: const EdgeInsets.all(12),
-      elevation: 6,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text("الخدمات المختارة", style: theme.textTheme.titleMedium),
-                Text(
-                  "الإجمالي: ${total.toStringAsFixed(0)} ر.س",
-                  style: GoogleFonts.cairo(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: List.generate(cart.length, (index) {
-                final service = cart[index];
-                return Chip(
-                  label: Text(service.name, style: GoogleFonts.cairo()),
-                  avatar: CircleAvatar(child: Icon(_getIconForCategory(service.category), size: 16)),
-                  onDeleted: () => removeFromCart(index),
-                  deleteIcon: const Icon(Icons.close, size: 18),
-                );
-              }),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.receipt_long),
-              label: const Text("الانتقال إلى الفاتورة"),
-              style: theme.elevatedButtonTheme.style?.copyWith(
-                backgroundColor: MaterialStateProperty.all(Colors.blue[700]),
-                foregroundColor: MaterialStateProperty.all(Colors.white),
-                minimumSize: MaterialStateProperty.all(const Size(double.infinity, 50)),
-              ),
-              onPressed: () => _navigateToInvoice(context),
-            ),
-          ],
+        builder: (_) => InvoicePage(
+          cart: List<ServiceModel>.from(cart),
+          customer: _selectedCustomer,
         ),
       ),
     );
   }
+
+
+
 }
