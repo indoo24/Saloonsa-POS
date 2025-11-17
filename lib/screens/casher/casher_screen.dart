@@ -1,11 +1,14 @@
+import 'package:barber_casher/screens/casher/header_section.dart';
 import 'package:flutter/material.dart';
-import '../../../theme.dart';
-import '../../widgets/gradiant_background.dart';
-import 'data/service_data.dart';
-import 'header_section.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:toastification/toastification.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'cart_section.dart';
 import 'categories_section.dart';
 import 'models/service-model.dart';
 import 'invoice_page.dart';
+import '../../cubits/cashier/cashier_cubit.dart';
+import '../../cubits/cashier/cashier_state.dart';
 
 class CashierScreen extends StatefulWidget {
   final VoidCallback onToggleTheme;
@@ -16,156 +19,289 @@ class CashierScreen extends StatefulWidget {
 }
 
 class _CashierScreenState extends State<CashierScreen> {
-  String selectedCategory = "قص الشعر";
-  List<ServiceModel> cart = [];
-
-  List<ServiceModel> get filteredServices =>
-      allServices.where((s) => s.category == selectedCategory).toList();
-
-  void addToCart(ServiceModel service) {
-    setState(() => cart.add(service));
+  @override
+  void initState() {
+    super.initState();
+    // Initialize data when screen opens
+    context.read<CashierCubit>().initialize();
   }
 
-  void removeFromCart(int index) {
-    setState(() => cart.removeAt(index));
+  // All state is now managed by CashierCubit - no local state needed!
+
+  void _showBarberSelectionSheet(ServiceModel service) {
+    String? localSelectedBarber;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+            left: 16,
+            right: 16,
+            top: 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'اختر الحلاق لخدمة "${service.name}"',
+                style: Theme.of(sheetContext).textTheme.titleMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              // Get barbers from CashierCubit state
+              BlocBuilder<CashierCubit, CashierState>(
+                builder: (context, state) {
+                  if (state is! CashierLoaded) return const SizedBox();
+                  
+                  return DropdownButtonFormField<String>(
+                    hint: const Text('الرجاء اختيار حلاق'),
+                    items: state.barbers.map((barber) {
+                      return DropdownMenuItem(
+                        value: barber,
+                        child: Text(barber, style: Theme.of(sheetContext).textTheme.titleMedium)
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      localSelectedBarber = value;
+                    },
+                    decoration: const InputDecoration(border: OutlineInputBorder()),
+                  );
+                },
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      child: const Text('إلغاء'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        if (localSelectedBarber != null) {
+                          // Call cubit method instead of local method
+                          context.read<CashierCubit>().addToCart(service, localSelectedBarber!);
+                          Navigator.pop(sheetContext);
+                        }
+                      },
+                      child: const Text('تأكيد'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  IconData _getIconForCategory(String category) {
+    switch (category) {
+      case "قص الشعر": return Icons.content_cut;
+      case "حلاقة ذقن": return Icons.face_retouching_natural;
+      case "العناية بالبشرة": return Icons.cleaning_services;
+      case "الصبغات": return Icons.brush;
+      case "استشوار": return Icons.air;
+      case "تسريحة": return Icons.style;
+      default: return Icons.cut;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("شاشة الكاشير 💈"),
-        actions: [
-          IconButton(
-            tooltip: isDarkMode
-                ? "التبديل إلى الوضع الفاتح"
-                : "التبديل إلى الوضع الداكن",
-            icon: Icon(isDarkMode ? Icons.light_mode : Icons.dark_mode),
-            onPressed: widget.onToggleTheme,
-          ),
-          IconButton(
-            icon: const Icon(Icons.receipt_long),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      InvoicePage(cart: List<ServiceModel>.from(cart)),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-      body: GradientBackground(
-        child: Column(
-          children: [
-            const HeaderSection(),
-            CategoriesSection(
-              selectedCategory: selectedCategory,
-              onCategorySelected: (cat) {
-                setState(() => selectedCategory = cat);
-              },
-            ),
-            Expanded(
-              child: GridView.builder(
-                padding: const EdgeInsets.all(12),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  childAspectRatio: 1.6,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                ),
-                itemCount: filteredServices.length,
-                itemBuilder: (context, index) {
-                  final service = filteredServices[index];
-                  return InkWell(
-                    onTap: () => addToCart(service),
-                    child: Card(
-                      elevation: 3,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(15),
-                      ),
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              service.name,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                            const SizedBox(height: 5),
-                            Text("${service.price.toStringAsFixed(0)}   ر.س"),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final crossAxisCount = (screenWidth / 200).floor().clamp(2, 4);
+
+    return BlocConsumer<CashierCubit, CashierState>(
+      // Listen for one-time events like success/error messages
+      listener: (context, state) {
+        if (state is CashierItemAdded) {
+          // Show success toast
+          toastification.show(
+            context: context,
+            type: ToastificationType.success,
+            style: ToastificationStyle.fillColored,
+            title: Text('تمت إضافة "${state.service.name}" للسلة'),
+            alignment: Alignment.topRight,
+            autoCloseDuration: const Duration(seconds: 3),
+          );
+        } else if (state is CashierItemRemoved) {
+          // Show removal toast
+          toastification.show(
+            context: context,
+            type: ToastificationType.error,
+            style: ToastificationStyle.fillColored,
+            title: Text('تم حذف "${state.service.name}" من السلة'),
+            alignment: Alignment.topRight,
+            autoCloseDuration: const Duration(seconds: 3),
+          );
+        } else if (state is CashierError) {
+          // Show error message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(state.message), backgroundColor: Colors.red),
+          );
+        }
+      },
+      // Build UI based on state
+      builder: (context, state) {
+        // Show loading indicator
+        if (state is CashierLoading || state is CashierInitial) {
+          return Scaffold(
+            appBar: AppBar(title: Text("الكاشير")),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        // Show error screen
+        if (state is CashierError) {
+          return Scaffold(
+            appBar: AppBar(title: Text("الكاشير")),
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  Text(state.message),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => context.read<CashierCubit>().initialize(),
+                    child: const Text('إعادة المحاولة'),
+                  ),
+                ],
               ),
             ),
-            if (cart.isNotEmpty) ...[
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    "الخدمات المختارة",
-                    style: TextStyle(fontWeight: FontWeight.bold),
+          );
+        }
+
+        // Get loaded state (contains all data)
+        final loadedState = state is CashierLoaded ? state : null;
+        if (loadedState == null) {
+          return Scaffold(
+            appBar: AppBar(title: Text("الكاشير")),
+            body: const Center(child: Text('حدث خطأ')),
+          );
+        }
+
+        // Build main UI with data from state
+        return Scaffold(
+          appBar: AppBar(
+            title: Text("الكاشير", style: theme.appBarTheme.titleTextStyle),
+            actions: [
+              IconButton(
+                tooltip: isDarkMode ? "التبديل إلى الوضع الفاتح" : "التبديل إلى الوضع الداكن",
+                icon: Icon(isDarkMode ? Icons.light_mode : Icons.dark_mode),
+                onPressed: widget.onToggleTheme,
+              ),
+              // Show invoice button only if cart has items
+              if (loadedState.cart.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.receipt_long),
+                  onPressed: () => _navigateToInvoice(context, loadedState),
+                ),
+            ],
+          ),
+          body: GestureDetector(
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: Column(
+              children: [
+                // Pass selected customer from state
+                HeaderSection(
+                  onCustomerSelected: (customer) {
+                    context.read<CashierCubit>().selectCustomer(customer);
+                  },
+                ),
+                CategoriesSection(
+                  selectedCategory: loadedState.selectedCategory,
+                  onCategorySelected: (cat) {
+                    // Call cubit method to change category
+                    context.read<CashierCubit>().selectCategory(cat);
+                  },
+                ),
+                const SizedBox(height: 10),
+                const Divider(height: 1),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.4,
+                          child: GridView.builder(
+                            padding: const EdgeInsets.all(12),
+                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: crossAxisCount,
+                              childAspectRatio: 1.2,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 12,
+                            ),
+                            // Use filtered services from state
+                            itemCount: loadedState.filteredServices.length,
+                            itemBuilder: (context, index) {
+                              final service = loadedState.filteredServices[index];
+                              return InkWell(
+                                onTap: () => _showBarberSelectionSheet(service),
+                                borderRadius: BorderRadius.circular(16),
+                                child: Card(
+                                  elevation: 2,
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(_getIconForCategory(service.category), size: 32, color: theme.colorScheme.secondary),
+                                      const SizedBox(height: 12),
+                                      Text(service.name, style: theme.textTheme.titleMedium, textAlign: TextAlign.center),
+                                      const SizedBox(height: 4),
+                                      Text("${service.price.toStringAsFixed(0)} ر.س", style: GoogleFonts.cairo(color: theme.colorScheme.secondary, fontWeight: FontWeight.bold)),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        // Show cart if not empty
+                        if (loadedState.cart.isNotEmpty)
+                          CartSection(
+                            cart: loadedState.cart,
+                            removeFromCart: (index) {
+                              // Call cubit method to remove item
+                              context.read<CashierCubit>().removeFromCart(index);
+                            },
+                            selectedCustomer: loadedState.selectedCustomer,
+                            navigateToInvoice: () => _navigateToInvoice(context, loadedState),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              Container(
-                width: double.infinity,
-                margin:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor.withValues(alpha: 0.9),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: List.generate(cart.length, (index) {
-                    final service = cart[index];
-                    return InputChip(
-                      label: Text(service.name),
-                      deleteIcon: const Icon(Icons.close),
-                      onDeleted: () => removeFromCart(index),
-                    );
-                  }),
-                ),
-              ),
-            ],
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-              child: ElevatedButton.icon(
-                icon: const Icon(Icons.receipt_long),
-                label: const Text("الانتقال إلى الفاتورة"),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(50),
-                  backgroundColor: brandGold,
-                  foregroundColor: Colors.black,
-                  textStyle: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          InvoicePage(cart: List<ServiceModel>.from(cart)),
-                    ),
-                  );
-                },
-              ),
+              ],
             ),
-          ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _navigateToInvoice(BuildContext context, CashierLoaded state) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => InvoicePage(
+          cart: List<ServiceModel>.from(state.cart),
+          customer: state.selectedCustomer,
         ),
       ),
     );

@@ -1,10 +1,12 @@
+import 'package:barber_casher/screens/auth/login_screen.dart';
 import 'package:flutter/material.dart';
 import '../../theme.dart';
-import 'casher/casher_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   final VoidCallback onToggleTheme;
-  const SplashScreen({super.key, required this.onToggleTheme});
+  final String? subdomain;
+
+  const SplashScreen({super.key, required this.onToggleTheme, this.subdomain});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -29,7 +31,7 @@ class _SplashScreenState extends State<SplashScreen>
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => CashierScreen(onToggleTheme: widget.onToggleTheme),
+          builder: (_) => LoginScreen(onToggleTheme: widget.onToggleTheme, subdomain: widget.subdomain),
         ),
       );
     });
@@ -37,11 +39,12 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [brandGold, Color(0xFFFFE082)],
+            colors: [theme.colorScheme.primary, theme.colorScheme.background],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -51,21 +54,16 @@ class _SplashScreenState extends State<SplashScreen>
           child: Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: const [
-                Icon(Icons.cut, size: 100, color: Colors.black),
-                SizedBox(height: 20),
+              children: [
+                Icon(Icons.content_cut_sharp, size: 100, color: theme.colorScheme.onPrimary),
+                const SizedBox(height: 20),
                 Text(
                   "Salon POS",
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+                    color: theme.colorScheme.onPrimary,
                   ),
-                ),
-                SizedBox(height: 10),
-                Text(
-                  "by Yousef",
-                  style: TextStyle(color: Colors.black54),
                 ),
               ],
             ),

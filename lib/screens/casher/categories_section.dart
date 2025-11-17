@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class CategoriesSection extends StatelessWidget {
   final String selectedCategory;
@@ -10,37 +11,43 @@ class CategoriesSection extends StatelessWidget {
     required this.onCategorySelected,
   });
 
+  static const List<String> categories = [
+    "قص الشعر",
+    "حلاقة ذقن",
+    "العناية بالبشرة",
+    "الصبغات",
+    "استشوار",
+    "تسريحة",
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final categories = [
-      "تصفيف وقص الشعر",
-      "العناية بالبشرة",
-      "الاظافر",
-      "الصبغات",
-      "بدكير ومنكير",
-      "التسريحات",
-    ];
+    final theme = Theme.of(context);
 
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      height: 55,
+    return SizedBox(
+      height: 50,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemCount: categories.length,
         itemBuilder: (context, index) {
-          final cat = categories[index];
-          final selected = cat == selectedCategory;
+          final category = categories[index];
+          final isSelected = category == selectedCategory;
+
           return ChoiceChip(
-            label: Text(cat),
-            labelStyle: TextStyle(
-                color: selected ? Colors.white : Colors.blueGrey.shade800),
-            selectedColor: Colors.blueGrey,
-            shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            selected: selected,
-            onSelected: (_) => onCategorySelected(cat),
+            label: Text(category),
+            selected: isSelected,
+            onSelected: (_) => onCategorySelected(category),
+            labelStyle: GoogleFonts.cairo(
+              color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
+              fontWeight: FontWeight.bold,
+            ),
+            backgroundColor: theme.colorScheme.surface,
+            selectedColor: theme.colorScheme.primary,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            showCheckmark: false,
+            elevation: isSelected ? 4 : 2,
           );
         },
       ),
