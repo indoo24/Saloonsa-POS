@@ -22,6 +22,8 @@ class InvoicePage extends StatefulWidget {
 class _InvoicePageState extends State<InvoicePage> {
   final _discountController = TextEditingController(text: '0');
   final _cashierNameController = TextEditingController(text: 'Yousef');
+  final _orderNumberController = TextEditingController(text: '${DateTime.now().millisecondsSinceEpoch}');
+  final _branchNameController = TextEditingController(text: 'الفرع الرئيسي');
   String _paymentMethod = 'نقدي';
 
   double _discount = 0.0;
@@ -40,6 +42,8 @@ class _InvoicePageState extends State<InvoicePage> {
   void dispose() {
     _discountController.dispose();
     _cashierNameController.dispose();
+    _orderNumberController.dispose();
+    _branchNameController.dispose();
     super.dispose();
   }
 
@@ -73,6 +77,8 @@ class _InvoicePageState extends State<InvoicePage> {
           discount: _discount,
           cashierName: _cashierNameController.text,
           paymentMethod: _paymentMethod,
+          orderNumber: _orderNumberController.text,
+          branchName: _branchNameController.text,
         );
       } else {
         final pdfData = await generateInvoicePdf(
@@ -138,9 +144,11 @@ class _InvoicePageState extends State<InvoicePage> {
           children: [
             Text("تفاصيل الفاتورة", style: theme.textTheme.titleLarge),
             const Divider(height: 24),
+            _buildInfoRow(theme, "رقم الطلب:", null, controller: _orderNumberController),
             _buildInfoRow(theme, "العميل:", widget.customer?.name ?? "عميل كاش"),
             _buildInfoRow(theme, "التاريخ:", DateFormat('yyyy-MM-dd').format(DateTime.now())),
             _buildInfoRow(theme, "الكاشير:", null, controller: _cashierNameController),
+            _buildInfoRow(theme, "الفرع:", null, controller: _branchNameController),
             _buildInfoRow(theme, "طريقة الدفع:", null, dropdown: _buildPaymentDropdown()),
           ],
         ),
