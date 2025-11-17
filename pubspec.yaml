@@ -19,6 +19,14 @@ dependencies:
   intl: ^0.20.2
   toastification: ^3.0.3
   esc_pos_printer_plus: ^0.1.1
+  image: ^4.0.17  # For logo image processing
+  # State Management
+  flutter_bloc: ^8.1.6
+  equatable: ^2.0.7
+  # Printing connections
+  blue_thermal_printer: ^1.2.3  # For Bluetooth printing
+  # usb_serial: ^0.5.0  # Disabled due to compatibility issues
+  network_info_plus: ^5.0.3  # For network info
 
 dev_dependencies:
   flutter_test:
