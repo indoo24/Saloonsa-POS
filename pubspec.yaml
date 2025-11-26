@@ -10,6 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   pdf: ^3.11.0
   printing: ^5.13.0
   shared_preferences: ^2.2.3
@@ -27,6 +29,9 @@ dependencies:
   blue_thermal_printer: ^1.2.3  # For Bluetooth printing
   # usb_serial: ^0.5.0  # Disabled due to compatibility issues
   network_info_plus: ^5.0.3  # For network info
+  # API Integration
+  http: ^1.2.0  # For HTTP requests
+  logger: ^2.0.2+1  # For detailed logging
 
 dev_dependencies:
   flutter_test:
