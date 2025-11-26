@@ -119,7 +119,7 @@ class _HeaderSectionState extends State<HeaderSection> {
                       child: Autocomplete<Customer>(
                         key: _autocompleteKey,
                         initialValue: TextEditingValue(
-                          text: state.selectedCustomer?.name ?? '',
+                          text: '',
                         ),
                         optionsBuilder: (TextEditingValue textEditingValue) {
                           if (textEditingValue.text.isEmpty) {

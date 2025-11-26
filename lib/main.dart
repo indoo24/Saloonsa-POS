@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'theme.dart';
 import 'screens/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
@@ -77,6 +78,16 @@ class _SalonAppState extends State<SalonApp> {
           theme: lightTheme,
           darkTheme: darkTheme,
           themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
+          // Add localization support
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: const [
+            Locale('en', ''), // English
+            Locale('ar', ''), // Arabic
+          ],
           // Step 3: Use BlocBuilder to decide which screen to show
           // This automatically switches screens based on authentication state
           home: BlocBuilder<AuthCubit, AuthState>(

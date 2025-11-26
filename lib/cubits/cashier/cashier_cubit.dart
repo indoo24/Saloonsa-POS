@@ -2,9 +2,11 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../repositories/cashier_repository.dart';
 import '../../screens/casher/models/service-model.dart';
 import '../../screens/casher/models/customer.dart';
+import '../../services/logger_service.dart';
 import 'cashier_state.dart';
 
 /// Cashier Cubit - Manages all business logic for the cashier screen
+/// Integrated with API for customers and invoices
 /// 
 /// HOW TO USE IN YOUR UI:
 /// 1. Wrap your widget with BlocProvider (see main.dart)
@@ -20,6 +22,8 @@ class CashierCubit extends Cubit<CashierState> {
   Future<void> initialize() async {
     try {
       emit(CashierLoading());
+      
+      LoggerService.info('Initializing cashier cubit');
 
       // Load all data in parallel for better performance
       final results = await Future.wait([
@@ -34,6 +38,13 @@ class CashierCubit extends Cubit<CashierState> {
       final barbers = results[2] as List<String>;
       final cart = results[3] as List<ServiceModel>;
 
+      LoggerService.info('Cashier data loaded', data: {
+        'services': services.length,
+        'customers': customers.length,
+        'barbers': barbers.length,
+        'cart': cart.length,
+      });
+
       emit(CashierLoaded(
         services: services,
         cart: cart,
@@ -41,7 +52,8 @@ class CashierCubit extends Cubit<CashierState> {
         barbers: barbers,
         selectedCustomer: customers.isNotEmpty ? customers.first : null,
       ));
-    } catch (e) {
+    } catch (e, stackTrace) {
+      LoggerService.error('Failed to initialize cashier', error: e, stackTrace: stackTrace);
       emit(CashierError('فشل في تحميل البيانات: ${e.toString()}'));
     }
   }
@@ -201,7 +213,12 @@ class CashierCubit extends Cubit<CashierState> {
     if (currentState is! CashierLoaded) return;
 
     try {
-      // Add customer via repository
+      LoggerService.info('Adding new customer from cubit', data: {
+        'name': name,
+        'phone': phone,
+      });
+
+      // Add customer via repository (API call)
       final newCustomer = await repository.addCustomer(
         name: name,
         phone: phone,
@@ -211,6 +228,11 @@ class CashierCubit extends Cubit<CashierState> {
       // Update customers list
       final updatedCustomers = List<Customer>.from(currentState.customers)
         ..add(newCustomer);
+
+      LoggerService.info('Customer added successfully', data: {
+        'customerId': newCustomer.id,
+        'name': newCustomer.name,
+      });
 
       // Update state with new customer and select it
       emit(currentState.copyWith(
@@ -226,7 +248,8 @@ class CashierCubit extends Cubit<CashierState> {
         customers: updatedCustomers,
         selectedCustomer: newCustomer,
       ));
-    } catch (e) {
+    } catch (e, stackTrace) {
+      LoggerService.error('Failed to add customer', error: e, stackTrace: stackTrace);
       emit(CashierError('فشل في إضافة العميل: ${e.toString()}'));
       emit(currentState);
     }
@@ -246,19 +269,32 @@ class CashierCubit extends Cubit<CashierState> {
   ///   child: Text('إتمام'),
   /// )
   /// ```
-  Future<bool> submitInvoice() async {
+  Future<bool> submitInvoice({String paymentType = 'cash'}) async {
     final currentState = state;
     if (currentState is! CashierLoaded) return false;
 
     try {
       emit(CashierSubmittingInvoice());
+      
+      LoggerService.invoiceAction('Submitting invoice from cubit', data: {
+        'cartItems': currentState.cart.length,
+        'total': currentState.cartTotal,
+        'customer': currentState.selectedCustomer?.name,
+        'paymentType': paymentType,
+      });
 
-      // Submit to backend
-      await repository.submitInvoice(
+      // Submit to backend API
+      final invoice = await repository.submitInvoice(
         services: currentState.cart,
         customer: currentState.selectedCustomer,
         total: currentState.cartTotal,
+        paymentType: paymentType,
       );
+
+      LoggerService.invoiceAction('Invoice submitted successfully', data: {
+        'invoiceId': invoice.id,
+        'invoiceNumber': invoice.invoiceNumber,
+      });
 
       // Clear cart after successful submission
       await repository.saveCart([]);
@@ -269,7 +305,8 @@ class CashierCubit extends Cubit<CashierState> {
       emit(currentState.copyWith(cart: []));
 
       return true;
-    } catch (e) {
+    } catch (e, stackTrace) {
+      LoggerService.error('Failed to submit invoice', error: e, stackTrace: stackTrace);
       emit(CashierError('فشل في إرسال الفاتورة: ${e.toString()}'));
       emit(currentState);
       return false;

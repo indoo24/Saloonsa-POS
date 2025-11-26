@@ -3,11 +3,12 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:blue_thermal_printer/blue_thermal_printer.dart';
 import 'package:esc_pos_printer_plus/esc_pos_printer_plus.dart';
-import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart' as esc_pos;
 import 'package:network_info_plus/network_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 // import 'package:usb_serial/usb_serial.dart';  // Disabled due to compatibility issues
 import '../models/printer_device.dart';
+import '../../../models/printer_settings.dart';
 import 'dart:convert';
 
 /// Universal printer service supporting WiFi, Bluetooth, and USB
@@ -22,6 +23,10 @@ class PrinterService {
   // Currently connected printer
   PrinterDevice? _connectedPrinter;
   PrinterDevice? get connectedPrinter => _connectedPrinter;
+
+  // Printer settings (paper size, etc.)
+  PrinterSettings _settings = const PrinterSettings();
+  PrinterSettings get settings => _settings;
 
   // Network printer instance (for WiFi)
   NetworkPrinter? _networkPrinter;
@@ -92,38 +97,63 @@ class PrinterService {
     }
   }
 
-  /// Scan for Bluetooth printers
+  /// Scan for Bluetooth printers with 10 second timeout
   Future<List<PrinterDevice>> scanBluetoothPrinters() async {
     final devices = <PrinterDevice>[];
 
     try {
-      // Check if Bluetooth is available
-      final isAvailable = await _bluetoothPrinter.isAvailable;
-      if (isAvailable == null || !isAvailable) {
-        return devices;
-      }
-
-      // Check if Bluetooth is enabled
-      final isOn = await _bluetoothPrinter.isOn;
-      if (isOn == null || !isOn) {
-        return devices;
-      }
-
-      // Get bonded (paired) devices
-      final bondedDevices = await _bluetoothPrinter.getBondedDevices();
-      
-      for (var device in bondedDevices) {
-        devices.add(PrinterDevice(
-          id: 'bt_${device.address}',
-          name: device.name ?? 'Unknown Bluetooth Printer',
-          address: device.address,
-          type: PrinterConnectionType.bluetooth,
-        ));
-      }
+      // Wrap the entire scanning process in a timeout
+      return await Future.any([
+        // The actual scanning logic
+        _performBluetoothScan(),
+        // Timeout after 10 seconds
+        Future.delayed(const Duration(seconds: 10), () {
+          print('Bluetooth scan timeout - no printers found within 10 seconds');
+          return <PrinterDevice>[];
+        }),
+      ]);
     } catch (e) {
       print('Error scanning Bluetooth printers: $e');
+      return devices;
+    }
+  }
+
+  /// Internal method to perform Bluetooth scan
+  Future<List<PrinterDevice>> _performBluetoothScan() async {
+    final devices = <PrinterDevice>[];
+
+    // Check if Bluetooth is available
+    final isAvailable = await _bluetoothPrinter.isAvailable;
+    if (isAvailable == null || !isAvailable) {
+      print('Bluetooth is not available on this device');
+      return devices;
     }
 
+    // Check if Bluetooth is enabled
+    final isOn = await _bluetoothPrinter.isOn;
+    if (isOn == null || !isOn) {
+      print('Bluetooth is not enabled. Please turn on Bluetooth');
+      return devices;
+    }
+
+    // Get bonded (paired) devices
+    final bondedDevices = await _bluetoothPrinter.getBondedDevices();
+    
+    if (bondedDevices.isEmpty) {
+      print('No paired Bluetooth devices found');
+      return devices;
+    }
+
+    for (var device in bondedDevices) {
+      devices.add(PrinterDevice(
+        id: 'bt_${device.address}',
+        name: device.name ?? 'Unknown Bluetooth Printer',
+        address: device.address,
+        type: PrinterConnectionType.bluetooth,
+      ));
+    }
+    
+    print('Found ${devices.length} paired Bluetooth device(s)');
     return devices;
   }
 
@@ -179,7 +209,7 @@ class PrinterService {
       return false;
     }
 
-    final printer = NetworkPrinter(PaperSize.mm80, await CapabilityProfile.load());
+    final printer = NetworkPrinter(_getEscPosPaperSize(), await esc_pos.CapabilityProfile.load());
     final result = await printer.connect(device.address!, port: device.port!);
 
     if (result == PosPrintResult.success) {
@@ -320,7 +350,7 @@ class PrinterService {
     if (_networkPrinter == null || _connectedPrinter == null) return false;
     
     // Reconnect for printing
-    final printer = NetworkPrinter(PaperSize.mm80, await CapabilityProfile.load());
+    final printer = NetworkPrinter(_getEscPosPaperSize(), await esc_pos.CapabilityProfile.load());
     final result = await printer.connect(
       _connectedPrinter!.address!,
       port: _connectedPrinter!.port!,
@@ -393,10 +423,197 @@ class PrinterService {
 
   /// Auto-reconnect to previously connected printer
   Future<bool> autoReconnect() async {
+    // Load settings first
+    await loadSettings();
+    
     final savedPrinter = await loadConnectedPrinter();
     if (savedPrinter != null) {
       return await connectToPrinter(savedPrinter);
     }
     return false;
   }
+
+  // ============================================================================
+  // SETTINGS MANAGEMENT
+  // ============================================================================
+
+  /// Update printer settings (paper size, etc.)
+  Future<void> updateSettings(PrinterSettings newSettings) async {
+    _settings = newSettings;
+    await _saveSettings();
+  }
+
+  /// Load printer settings from storage
+  Future<void> loadSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonString = prefs.getString('printer_settings');
+      
+      if (jsonString != null) {
+        _settings = PrinterSettings.fromJson(jsonDecode(jsonString));
+      }
+    } catch (e) {
+      print('Error loading printer settings: $e');
+    }
+  }
+
+  /// Save printer settings to storage
+  Future<void> _saveSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('printer_settings', jsonEncode(_settings.toJson()));
+    } catch (e) {
+      print('Error saving printer settings: $e');
+    }
+  }
+
+  /// Convert our PaperSize enum to ESC/POS library's PaperSize
+  esc_pos.PaperSize _getEscPosPaperSize() {
+    switch (_settings.paperSize) {
+      case PaperSize.mm58:
+        return esc_pos.PaperSize.mm58;
+      case PaperSize.mm80:
+        return esc_pos.PaperSize.mm80;
+      case PaperSize.a4:
+        return esc_pos.PaperSize.mm80; // Use 80mm for A4, adjust in generator
+    }
+  }
+
+  // ============================================================================
+  // TEST PRINT
+  // ============================================================================
+
+  /// Generate and print a test receipt
+  Future<bool> printTestReceipt() async {
+    if (_connectedPrinter == null) {
+      throw Exception('No printer connected');
+    }
+
+    try {
+      // Generate test receipt bytes
+      final profile = await esc_pos.CapabilityProfile.load();
+      final generator = esc_pos.Generator(_getEscPosPaperSize(), profile);
+      List<int> bytes = [];
+
+      // Header
+      bytes += generator.text(
+        'TEST RECEIPT',
+        styles: const esc_pos.PosStyles(
+          align: esc_pos.PosAlign.center,
+          height: esc_pos.PosTextSize.size2,
+          width: esc_pos.PosTextSize.size2,
+          bold: true,
+        ),
+      );
+      bytes += generator.emptyLines(1);
+
+      // Separator
+      bytes += generator.text(
+        '================================',
+        styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.center),
+      );
+      bytes += generator.emptyLines(1);
+
+      // Connection info
+      bytes += generator.text(
+        'Printer: ${_connectedPrinter!.name}',
+        styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.center),
+      );
+      bytes += generator.text(
+        'Type: ${_connectedPrinter!.type.toString().split('.').last.toUpperCase()}',
+        styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.center),
+      );
+      if (_connectedPrinter!.address != null) {
+        bytes += generator.text(
+          'Address: ${_connectedPrinter!.address}',
+          styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.center),
+        );
+      }
+      bytes += generator.emptyLines(1);
+
+      // Paper size info
+      bytes += generator.text(
+        'Paper Size: ${_settings.paperSize.displayName}',
+        styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.center, bold: true),
+      );
+      bytes += generator.text(
+        'Width: ${_settings.paperSize.charsPerLine} chars/line',
+        styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.center),
+      );
+      bytes += generator.emptyLines(1);
+
+      // Date and time
+      final now = DateTime.now();
+      final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} '
+                      '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+      bytes += generator.text(
+        'Date: $dateStr',
+        styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.center),
+      );
+      bytes += generator.emptyLines(1);
+
+      // Separator
+      bytes += generator.text(
+        '================================',
+        styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.center),
+      );
+      bytes += generator.emptyLines(1);
+
+      // Test patterns
+      bytes += generator.text(
+        'Text Alignment Test:',
+        styles: const esc_pos.PosStyles(bold: true),
+      );
+      bytes += generator.text(
+        'LEFT ALIGNED',
+        styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.left),
+      );
+      bytes += generator.text(
+        'CENTER ALIGNED',
+        styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.center),
+      );
+      bytes += generator.text(
+        'RIGHT ALIGNED',
+        styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.right),
+      );
+      bytes += generator.emptyLines(1);
+
+      // Character set test
+      bytes += generator.text(
+        'Character Test: 1234567890',
+        styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.center),
+      );
+      bytes += generator.text(
+        'Arabic: مرحبا بكم',
+        styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.center),
+      );
+      bytes += generator.emptyLines(2);
+
+      // Status
+      bytes += generator.text(
+        '✓ Printer is working correctly!',
+        styles: const esc_pos.PosStyles(
+          align: esc_pos.PosAlign.center,
+          bold: true,
+        ),
+      );
+      bytes += generator.emptyLines(1);
+
+      bytes += generator.text(
+        'Barber Cashier System',
+        styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.center),
+      );
+
+      // Cut paper
+      bytes += generator.feed(2);
+      bytes += generator.cut();
+
+      // Send to printer
+      return await printBytes(bytes);
+    } catch (e) {
+      print('Error printing test receipt: $e');
+      return false;
+    }
+  }
 }
+

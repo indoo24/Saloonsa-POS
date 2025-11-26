@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../screens/casher/models/printer_device.dart';
 import '../../screens/casher/services/printer_service.dart';
+import '../../models/printer_settings.dart';
 import 'printer_state.dart';
 
 /// Cubit for managing printer operations
@@ -106,4 +107,48 @@ class PrinterCubit extends Cubit<PrinterState> {
 
   /// Check if a printer is connected
   bool get isConnected => _printerService.connectedPrinter != null;
+
+  /// Get current printer settings
+  PrinterSettings get settings => _printerService.settings;
+
+  /// Update printer settings (paper size, etc.)
+  Future<void> updateSettings(PrinterSettings newSettings) async {
+    try {
+      await _printerService.updateSettings(newSettings);
+      
+      // Emit current state again to trigger UI update
+      if (_printerService.connectedPrinter != null) {
+        emit(PrinterConnected(_printerService.connectedPrinter!));
+      }
+    } catch (e) {
+      emit(PrinterError('Failed to update settings: $e'));
+    }
+  }
+
+  /// Send a test print to verify printer functionality
+  Future<void> testPrint() async {
+    if (_printerService.connectedPrinter == null) {
+      emit(const PrinterError('No printer connected'));
+      return;
+    }
+
+    emit(const PrinterPrinting());
+
+    try {
+      final success = await _printerService.printTestReceipt();
+
+      if (success) {
+        emit(const PrinterPrintSuccess());
+        // Return to connected state after 2 seconds
+        await Future.delayed(const Duration(seconds: 2));
+        if (_printerService.connectedPrinter != null) {
+          emit(PrinterConnected(_printerService.connectedPrinter!));
+        }
+      } else {
+        emit(const PrinterError('Test print failed'));
+      }
+    } catch (e) {
+      emit(PrinterError('Test print error: $e'));
+    }
+  }
 }

@@ -1,9 +1,12 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../repositories/auth_repository.dart';
+import '../../services/api_client.dart';
+import '../../services/logger_service.dart';
 import 'auth_state.dart';
 
 /// Authentication Cubit - Manages login/logout and auth state
+/// Integrated with API client for real authentication
 /// 
 /// HOW TO USE IN YOUR UI:
 /// 1. Wrap MaterialApp with BlocProvider<AuthCubit>
@@ -11,6 +14,7 @@ import 'auth_state.dart';
 /// 3. Use BlocListener to navigate on auth state changes
 class AuthCubit extends Cubit<AuthState> {
   final AuthRepository repository;
+  final ApiClient _apiClient = ApiClient();
 
   AuthCubit({required this.repository}) : super(AuthInitial());
 
@@ -19,25 +23,38 @@ class AuthCubit extends Cubit<AuthState> {
   Future<void> checkAuthStatus() async {
     try {
       emit(AuthChecking());
+      
+      LoggerService.authAction('Checking authentication status');
+
+      // Initialize API client
+      await _apiClient.initialize();
 
       final isLoggedIn = await repository.isLoggedIn();
       
       if (isLoggedIn) {
         final userData = await repository.getUserData();
         if (userData != null) {
+          LoggerService.authAction('User is authenticated', data: {
+            'userId': userData['id'],
+            'username': userData['name'],
+          });
+          
           emit(AuthAuthenticated(
-            token: userData['token'] ?? '',
-            userId: userData['userId'] ?? 0,
-            username: userData['username'] ?? '',
-            subdomain: userData['subdomain'] ?? '',
+            token: '', // Token is stored in ApiClient
+            userId: userData['id'] ?? 0,
+            username: userData['name'] ?? '',
+            subdomain: '', // Loaded from prefs in ApiClient
           ));
         } else {
+          LoggerService.authAction('No user data found');
           emit(AuthUnauthenticated());
         }
       } else {
+        LoggerService.authAction('User not authenticated');
         emit(AuthUnauthenticated());
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      LoggerService.error('Error checking auth status', error: e, stackTrace: stackTrace);
       emit(AuthUnauthenticated());
     }
   }
@@ -64,6 +81,11 @@ class AuthCubit extends Cubit<AuthState> {
   }) async {
     try {
       emit(AuthLoading());
+      
+      LoggerService.authAction('Login attempt', data: {
+        'username': username,
+        'subdomain': subdomain,
+      });
 
       // Call repository to authenticate
       final userData = await repository.login(
@@ -72,23 +94,33 @@ class AuthCubit extends Cubit<AuthState> {
         subdomain: subdomain,
       );
 
-      // Save credentials to SharedPreferences for persistence
+      // Save subdomain to SharedPreferences for persistence
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('token', userData['token']);
-      await prefs.setInt('userId', userData['userId']);
-      await prefs.setString('username', userData['username']);
-      await prefs.setString('subdomain', userData['subdomain']);
+      await prefs.setString('subdomain', subdomain);
+
+      LoggerService.authAction('Login successful', data: {
+        'userId': userData['userId'],
+        'username': userData['username'],
+        'salonId': userData['salonId'],
+      });
 
       // Emit authenticated state
       emit(AuthAuthenticated(
         token: userData['token'],
         userId: userData['userId'],
         username: userData['username'],
-        subdomain: userData['subdomain'],
+        subdomain: subdomain,
       ));
-    } catch (e) {
-      emit(AuthError(e.toString().replaceAll('Exception: ', '')));
+    } on Exception catch (e) {
+      final errorMessage = e.toString().replaceAll('Exception: ', '');
+      LoggerService.error('Login failed', error: e);
+      emit(AuthError(errorMessage));
       // Return to unauthenticated state after showing error
+      await Future.delayed(const Duration(milliseconds: 100));
+      emit(AuthUnauthenticated());
+    } catch (e, stackTrace) {
+      LoggerService.error('Login error', error: e, stackTrace: stackTrace);
+      emit(AuthError('حدث خطأ غير متوقع'));
       await Future.delayed(const Duration(milliseconds: 100));
       emit(AuthUnauthenticated());
     }
@@ -106,21 +138,30 @@ class AuthCubit extends Cubit<AuthState> {
   Future<void> logout() async {
     try {
       emit(AuthLoggingOut());
+      
+      LoggerService.authAction('Logout attempt');
 
-      // Call repository logout
+      // Call repository logout (clears API token)
       await repository.logout();
 
-      // Clear stored credentials
+      // Keep subdomain for next login - only clear user-specific data
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('token');
-      await prefs.remove('userId');
-      await prefs.remove('username');
-      // Keep subdomain for next login
+      final subdomain = prefs.getString('subdomain');
+      
+      await prefs.clear();
+      
+      if (subdomain != null) {
+        await prefs.setString('subdomain', subdomain);
+      }
+
+      LoggerService.authAction('Logout successful');
 
       emit(AuthUnauthenticated());
-    } catch (e) {
+    } catch (e, stackTrace) {
+      LoggerService.error('Logout failed', error: e, stackTrace: stackTrace);
       emit(AuthError('فشل في تسجيل الخروج: ${e.toString()}'));
       emit(AuthUnauthenticated());
     }
   }
 }
+

@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../cubits/cashier/cashier_cubit.dart';
 import 'pdf_invoice.dart';
 import 'models/customer.dart';
 import 'models/service-model.dart';
@@ -25,6 +27,8 @@ class _InvoicePageState extends State<InvoicePage> {
   final _orderNumberController = TextEditingController(text: '${DateTime.now().millisecondsSinceEpoch}');
   final _branchNameController = TextEditingController(text: 'الفرع الرئيسي');
   String _paymentMethod = 'نقدي';
+  DateTime? _selectedServiceDateTime;
+  bool _isSaving = false;
 
   double _discount = 0.0;
 
@@ -36,6 +40,8 @@ class _InvoicePageState extends State<InvoicePage> {
         _discount = double.tryParse(_discountController.text) ?? 0.0;
       });
     });
+    // Set default service date/time to now
+    _selectedServiceDateTime = DateTime.now();
   }
 
   @override
@@ -67,6 +73,103 @@ class _InvoicePageState extends State<InvoicePage> {
       return false;
     }
   }
+
+  // Save invoice without printing
+  Future<void> _handleSaveOnly() async {
+    if (_isSaving) return;
+    
+    setState(() => _isSaving = true);
+    
+    try {
+      // Map payment method to API format
+      String apiPaymentType = 'cash';
+      if (_paymentMethod == 'شبكة') {
+        apiPaymentType = 'credit_card';
+      } else if (_paymentMethod == 'تحويل') {
+        apiPaymentType = 'bank_transfer';
+      }
+      
+      final success = await context.read<CashierCubit>().submitInvoice(
+        paymentType: apiPaymentType,
+      );
+      
+      if (success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ تم حفظ الفاتورة بنجاح'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ فشل حفظ الفاتورة: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  // Save and print invoice
+  Future<void> _handleSaveAndPrint() async {
+    if (_isSaving) return;
+    
+    setState(() => _isSaving = true);
+    
+    try {
+      // First save the invoice
+      // Map payment method to API format
+      String apiPaymentType = 'cash';
+      if (_paymentMethod == 'شبكة') {
+        apiPaymentType = 'credit_card';
+      } else if (_paymentMethod == 'تحويل') {
+        apiPaymentType = 'bank_transfer';
+      }
+      
+      final success = await context.read<CashierCubit>().submitInvoice(
+        paymentType: apiPaymentType,
+      );
+      
+      if (!success) {
+        throw Exception('فشل في حفظ الفاتورة');
+      }
+      
+      // Then print
+      await _handlePrint();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ تم حفظ وطباعة الفاتورة بنجاح'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ خطأ: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+  
   Future<void> _handlePrint() async {
     try {
       final connected = await tryConnectToPrinter();
@@ -95,6 +198,36 @@ class _InvoicePageState extends State<InvoicePage> {
     }
   }
 
+  // Date and Time Picker
+  Future<void> _selectServiceDateTime() async {
+    final DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _selectedServiceDateTime ?? DateTime.now(),
+      firstDate: DateTime.now().subtract(const Duration(days: 30)),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      locale: const Locale('ar', 'SA'),
+    );
+
+    if (pickedDate != null && mounted) {
+      final TimeOfDay? pickedTime = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.fromDateTime(_selectedServiceDateTime ?? DateTime.now()),
+      );
+
+      if (pickedTime != null && mounted) {
+        setState(() {
+          _selectedServiceDateTime = DateTime(
+            pickedDate.year,
+            pickedDate.month,
+            pickedDate.day,
+            pickedTime.hour,
+            pickedTime.minute,
+          );
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -119,13 +252,43 @@ class _InvoicePageState extends State<InvoicePage> {
             const SizedBox(height: 24),
             _buildTotalsSection(theme, subtotal, tax, discountAmount, finalTotal),
             const SizedBox(height: 32),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.print_outlined),
-              label: const Text("طباعة الفاتورة"),
-              style: theme.elevatedButtonTheme.style?.copyWith(
-                minimumSize: MaterialStateProperty.all(const Size(double.infinity, 50)),
-              ),
-              onPressed: _handlePrint,
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    icon: _isSaving 
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.save_outlined),
+                    label: const Text("حفظ الفاتورة"),
+                    style: theme.elevatedButtonTheme.style?.copyWith(
+                      minimumSize: MaterialStateProperty.all(const Size(double.infinity, 50)),
+                      backgroundColor: MaterialStateProperty.all(Colors.blue),
+                    ),
+                    onPressed: _isSaving ? null : _handleSaveOnly,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    icon: _isSaving 
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.print_outlined),
+                    label: const Text("حفظ وطباعة"),
+                    style: theme.elevatedButtonTheme.style?.copyWith(
+                      minimumSize: MaterialStateProperty.all(const Size(double.infinity, 50)),
+                    ),
+                    onPressed: _isSaving ? null : _handleSaveAndPrint,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -150,6 +313,8 @@ class _InvoicePageState extends State<InvoicePage> {
             _buildInfoRow(theme, "الكاشير:", null, controller: _cashierNameController),
             _buildInfoRow(theme, "الفرع:", null, controller: _branchNameController),
             _buildInfoRow(theme, "طريقة الدفع:", null, dropdown: _buildPaymentDropdown()),
+            const SizedBox(height: 8),
+            _buildServiceDateTimeRow(theme),
           ],
         ),
       ),
@@ -265,6 +430,50 @@ class _InvoicePageState extends State<InvoicePage> {
         children: [
           Text(title, style: GoogleFonts.cairo(fontWeight: isBold ? FontWeight.bold : FontWeight.normal, fontSize: isBold ? 18 : 16, color: color)),
           Text(value, style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: isBold ? 18 : 16, color: color)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildServiceDateTimeRow(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text("موعد الخدمة:", style: theme.textTheme.titleMedium),
+          ),
+          Expanded(
+            flex: 3,
+            child: InkWell(
+              onTap: _selectServiceDateTime,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                decoration: BoxDecoration(
+                  border: Border.all(color: theme.dividerColor),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _selectedServiceDateTime != null
+                            ? DateFormat('yyyy-MM-dd HH:mm').format(_selectedServiceDateTime!)
+                            : 'اختر التاريخ والوقت',
+                        style: theme.textTheme.bodyLarge,
+                        textAlign: TextAlign.right,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(Icons.calendar_today, size: 20, color: theme.primaryColor),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
