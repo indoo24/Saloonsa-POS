@@ -7,6 +7,7 @@ import 'cart_section.dart';
 import 'categories_section.dart';
 import 'models/service-model.dart';
 import 'invoice_page.dart';
+import 'printer_settings_screen.dart';
 import '../../cubits/cashier/cashier_cubit.dart';
 import '../../cubits/cashier/cashier_state.dart';
 
@@ -202,6 +203,19 @@ class _CashierScreenState extends State<CashierScreen> {
           appBar: AppBar(
             title: Text("الكاشير", style: theme.appBarTheme.titleTextStyle),
             actions: [
+              // Printer Settings button
+              IconButton(
+                tooltip: "إعدادات الطابعة",
+                icon: const Icon(Icons.settings),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const PrinterSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
               IconButton(
                 tooltip: isDarkMode ? "التبديل إلى الوضع الفاتح" : "التبديل إلى الوضع الداكن",
                 icon: Icon(isDarkMode ? Icons.light_mode : Icons.dark_mode),
