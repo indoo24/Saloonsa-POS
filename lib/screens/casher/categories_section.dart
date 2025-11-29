@@ -12,10 +12,10 @@ class CategoriesSection extends StatelessWidget {
   });
 
   static const List<String> categories = [
-    "قص الشعر",
-    "حلاقة ذقن",
-    "العناية بالبشرة",
-    "الصبغات",
+    "تصفيف وقص الشعر",
+    "خدمات العناية بالبشرة",
+    "خدمات الأظافر",
+    "الشعر",
     "استشوار",
     "تسريحة",
   ];
