@@ -11,16 +11,19 @@ class ServiceModel {
     required this.category,
     this.barber,
     this.serviceDateTime,
+    required int id, required String image,
   });
 
   get employeeName => null;
-  
+
+
   // Copy with method for updating properties
   ServiceModel copyWith({
     String? name,
     double? price,
     String? category,
     String? barber,
+    required int id,
     DateTime? serviceDateTime,
   }) {
     return ServiceModel(
@@ -28,7 +31,9 @@ class ServiceModel {
       price: price ?? this.price,
       category: category ?? this.category,
       barber: barber ?? this.barber,
-      serviceDateTime: serviceDateTime ?? this.serviceDateTime,
+      serviceDateTime: serviceDateTime ??
+          this.serviceDateTime,
+      id:id, image: '' ,
     );
   }
 }
