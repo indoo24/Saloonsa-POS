@@ -26,12 +26,21 @@ class AuthRepository {
         requiresAuth: false,
       );
 
+      LoggerService.info('Salon API response', data: salonResponse);
+
       if (!salonResponse['success']) {
         throw Exception(salonResponse['message'] ?? 'فشل في العثور على الصالون');
       }
 
-      final salon = Salon.fromJson(salonResponse['data']);
-      LoggerService.info('Salon found', data: salon.toJson());
+      final salonData = salonResponse['data'];
+      if (salonData == null) {
+        throw Exception('بيانات الصالون غير موجودة');
+      }
+
+      LoggerService.info('Salon data received', data: salonData);
+
+      final salon = Salon.fromJson(salonData);
+      LoggerService.info('Salon parsed successfully', data: salon.toJson());
 
       // Step 2: Authenticate user
       final loginResponse = await _apiClient.post(

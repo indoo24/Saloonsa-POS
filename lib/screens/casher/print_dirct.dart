@@ -6,6 +6,7 @@ import 'receipt_generator.dart';
 /// Generate ESC/POS bytes for invoice printing with enhanced format
 /// This function creates the invoice format matching the reference image
 /// Returns raw bytes that can be sent to any printer (WiFi/Bluetooth/USB)
+/// Now supports API-calculated values
 Future<List<int>> generateInvoiceBytes({
   required Customer? customer,
   required List<ServiceModel> services,
@@ -14,10 +15,17 @@ Future<List<int>> generateInvoiceBytes({
   required String paymentMethod,
   String? orderNumber,
   String? branchName,
+  double? paid,
+  double? remaining,
+  // NEW: API-provided calculated values (preferred)
+  double? apiSubtotal,
+  double? apiTaxAmount,
+  double? apiDiscountAmount,
+  double? apiGrandTotal,
 }) async {
   // Use the enhanced receipt generator
   final receiptGenerator = ReceiptGenerator();
-  
+
   return await receiptGenerator.generateReceiptBytes(
     orderNumber: orderNumber ?? '${DateTime.now().millisecondsSinceEpoch}',
     customer: customer,
@@ -26,6 +34,13 @@ Future<List<int>> generateInvoiceBytes({
     cashierName: cashierName,
     paymentMethod: paymentMethod,
     branchName: branchName ?? 'الفرع الرئيسي',
+    paid: paid,
+    remaining: remaining,
+    // Pass API values to receipt generator
+    apiSubtotal: apiSubtotal,
+    apiTaxAmount: apiTaxAmount,
+    apiDiscountAmount: apiDiscountAmount,
+    apiGrandTotal: apiGrandTotal,
   );
 }
 
@@ -39,6 +54,13 @@ Future<bool> printInvoiceDirect({
   required String paymentMethod,
   String? orderNumber,
   String? branchName,
+  double? paid,
+  double? remaining,
+  // NEW: API-provided calculated values (preferred)
+  double? apiSubtotal,
+  double? apiTaxAmount,
+  double? apiDiscountAmount,
+  double? apiGrandTotal,
 }) async {
   try {
     // Generate invoice bytes using enhanced receipt generator
@@ -50,6 +72,13 @@ Future<bool> printInvoiceDirect({
       paymentMethod: paymentMethod,
       orderNumber: orderNumber,
       branchName: branchName,
+      paid: paid,
+      remaining: remaining,
+      // Pass API values through
+      apiSubtotal: apiSubtotal,
+      apiTaxAmount: apiTaxAmount,
+      apiDiscountAmount: apiDiscountAmount,
+      apiGrandTotal: apiGrandTotal,
     );
 
     // Send to connected printer via universal service

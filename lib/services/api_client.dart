@@ -206,6 +206,12 @@ class ApiClient {
     final statusCode = response.statusCode;
     
     try {
+      // Log raw response for debugging truncation issues
+      if (response.body.isEmpty) {
+        LoggerService.error('Empty response body from $endpoint');
+        throw ApiException('الاستجابة فارغة من الخادم');
+      }
+
       final responseData = json.decode(response.body) as Map<String, dynamic>;
       
       LoggerService.apiResponse(endpoint, statusCode, responseData);
@@ -251,8 +257,39 @@ class ApiClient {
       if (e is ApiException || e is ValidationException) {
         rethrow;
       }
-      LoggerService.apiError(endpoint, 'Failed to parse response: $e');
-      throw ApiException('خطأ في معالجة الاستجابة: ${e.toString()}');
+      
+      // Enhanced error logging for JSON parsing issues
+      String errorContext = '';
+      if (e is FormatException) {
+        // Extract character position from error message
+        final match = RegExp(r'character (\d+)').firstMatch(e.toString());
+        if (match != null) {
+          final position = int.parse(match.group(1)!);
+          final start = (position - 50).clamp(0, response.body.length);
+          final end = (position + 50).clamp(0, response.body.length);
+          errorContext = '\n\nContext around error position:\n'
+              '...${response.body.substring(start, end)}...\n'
+              '${' ' * (position - start - 3)}^\n'
+              'Check backend JSON formatting at this location.';
+        }
+      }
+      
+      // Log the actual response body for debugging
+      final bodyPreview = response.body.length > 500 
+          ? '${response.body.substring(0, 500)}...[truncated]'
+          : response.body;
+      
+      LoggerService.error(
+        'Failed to parse response from $endpoint. '
+        'Status: $statusCode, Body length: ${response.body.length}, '
+        'Preview: $bodyPreview$errorContext',
+        error: e,
+      );
+      
+      throw ApiException(
+        'خطأ في معالجة الاستجابة: ${e.toString()}\n'
+        'يوجد خطأ في تنسيق البيانات من الخادم. تواصل مع الدعم الفني.',
+      );
     }
   }
 }
