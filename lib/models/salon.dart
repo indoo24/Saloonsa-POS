@@ -17,13 +17,21 @@ class Salon {
   });
 
   factory Salon.fromJson(Map<String, dynamic> json) {
+    // Handle potential null or numeric types for id
+    final id = json['id'];
+    final parsedId = id is int ? id : (id is String ? int.tryParse(id) : null);
+    
+    if (parsedId == null) {
+      throw Exception('Salon ID is required and must be a valid integer');
+    }
+
     return Salon(
-      id: json['id'] as int,
-      name: json['name'] as String,
-      mobile: json['mobile'] as String?,
-      note: json['note'] as String?,
-      subdomain: json['subdomain'] as String,
-      createdAt: json['created_at'] as String?,
+      id: parsedId,
+      name: json['name']?.toString() ?? '',
+      mobile: json['mobile']?.toString(),
+      note: json['note']?.toString(),
+      subdomain: json['subdomain']?.toString() ?? '',
+      createdAt: json['created_at']?.toString(),
     );
   }
 

@@ -1,6 +1,8 @@
 import 'package:equatable/equatable.dart';
 import '../../screens/casher/models/service-model.dart';
 import '../../screens/casher/models/customer.dart';
+import '../../models/category.dart';
+import '../../models/payment_method.dart';
 
 /// Base state for Cashier screen
 /// Uses Equatable for easy state comparison in BlocBuilder
@@ -23,6 +25,8 @@ class CashierLoaded extends CashierState {
   final List<ServiceModel> cart;
   final List<Customer> customers;
   final List<String> barbers;
+  final List<Category> categories;
+  final List<PaymentMethod> paymentMethods;
   final Customer? selectedCustomer;
   final String selectedCategory;
 
@@ -31,12 +35,17 @@ class CashierLoaded extends CashierState {
     required this.cart,
     required this.customers,
     required this.barbers,
+    required this.categories,
+    required this.paymentMethods,
     this.selectedCustomer,
-    this.selectedCategory = "قص الشعر",
+    this.selectedCategory = "الكل",
   });
 
   /// Helper to get filtered services by category
   List<ServiceModel> get filteredServices {
+    if (selectedCategory == "الكل") {
+      return services;
+    }
     return services.where((s) => s.category == selectedCategory).toList();
   }
 
@@ -52,6 +61,8 @@ class CashierLoaded extends CashierState {
     List<ServiceModel>? cart,
     List<Customer>? customers,
     List<String>? barbers,
+    List<Category>? categories,
+    List<PaymentMethod>? paymentMethods,
     Customer? selectedCustomer,
     String? selectedCategory,
     bool clearCustomer = false,
@@ -61,6 +72,8 @@ class CashierLoaded extends CashierState {
       cart: cart ?? this.cart,
       customers: customers ?? this.customers,
       barbers: barbers ?? this.barbers,
+      categories: categories ?? this.categories,
+      paymentMethods: paymentMethods ?? this.paymentMethods,
       selectedCustomer: clearCustomer ? null : (selectedCustomer ?? this.selectedCustomer),
       selectedCategory: selectedCategory ?? this.selectedCategory,
     );
@@ -72,6 +85,8 @@ class CashierLoaded extends CashierState {
         cart,
         customers,
         barbers,
+        categories,
+        paymentMethods,
         selectedCustomer,
         selectedCategory,
       ];

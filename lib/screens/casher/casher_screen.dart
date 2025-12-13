@@ -1,5 +1,6 @@
 import 'package:barber_casher/screens/casher/header_section.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:toastification/toastification.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -20,6 +21,10 @@ class CashierScreen extends StatefulWidget {
 }
 
 class _CashierScreenState extends State<CashierScreen> {
+  double _cartHeight = 250.0; // Default cart height
+  final double _minCartHeight = 200.0;
+  final double _maxCartHeight = 600.0;
+
   @override
   void initState() {
     super.initState();
@@ -30,16 +35,27 @@ class _CashierScreenState extends State<CashierScreen> {
   // All state is now managed by CashierCubit - no local state needed!
 
   void _showBarberSelectionSheet(ServiceModel service) {
+    // Close keyboard when opening barber selection
+    FocusScope.of(context).unfocus();
+    FocusManager.instance.primaryFocus?.unfocus();
+    
     String? localSelectedBarber;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      isDismissible: true,
+      enableDrag: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (sheetContext) {
-        return Padding(
+        return GestureDetector(
+          onTap: () {
+            // Prevent keyboard from opening when tapping inside the sheet
+            FocusScope.of(sheetContext).unfocus();
+          },
+          child: Padding(
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
             left: 16,
@@ -103,6 +119,7 @@ class _CashierScreenState extends State<CashierScreen> {
               const SizedBox(height: 16),
             ],
           ),
+          ), // GestureDetector closing
         );
       },
     );
@@ -230,7 +247,11 @@ class _CashierScreenState extends State<CashierScreen> {
             ],
           ),
           body: GestureDetector(
-            onTap: () => FocusScope.of(context).unfocus(),
+            onTap: () {
+              FocusScope.of(context).unfocus();
+              FocusManager.instance.primaryFocus?.unfocus();
+            },
+            behavior: HitTestBehavior.opaque,
             child: Column(
               children: [
                 // Pass selected customer from state
@@ -240,6 +261,7 @@ class _CashierScreenState extends State<CashierScreen> {
                   },
                 ),
                 CategoriesSection(
+                  categories: loadedState.categories,
                   selectedCategory: loadedState.selectedCategory,
                   onCategorySelected: (cat) {
                     // Call cubit method to change category
@@ -249,46 +271,139 @@ class _CashierScreenState extends State<CashierScreen> {
                 const SizedBox(height: 10),
                 const Divider(height: 1),
                 Expanded(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        SizedBox(
-                          height: MediaQuery.of(context).size.height * 0.4,
-                          child: GridView.builder(
-                            padding: const EdgeInsets.all(12),
-                            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: crossAxisCount,
-                              childAspectRatio: 1.2,
-                              crossAxisSpacing: 12,
-                              mainAxisSpacing: 12,
-                            ),
-                            // Use filtered services from state
-                            itemCount: loadedState.filteredServices.length,
-                            itemBuilder: (context, index) {
-                              final service = loadedState.filteredServices[index];
-                              return InkWell(
-                                onTap: () => _showBarberSelectionSheet(service),
-                                borderRadius: BorderRadius.circular(16),
-                                child: Card(
-                                  elevation: 2,
+                  child: Stack(
+                    children: [
+                      // Services Grid - Takes full height when cart is empty
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: loadedState.cart.isEmpty ? 0 : _cartHeight, // Dynamic cart height
+                        child: GridView.builder(
+                          padding: const EdgeInsets.all(12),
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: crossAxisCount,
+                            childAspectRatio: 1.2,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                          ),
+                          // Use filtered services from state
+                          itemCount: loadedState.filteredServices.length,
+                          itemBuilder: (context, index) {
+                            final service = loadedState.filteredServices[index];
+                            return InkWell(
+                              onTap: () {
+                                // Close keyboard before showing barber selection
+                                FocusScope.of(context).unfocus();
+                                FocusManager.instance.primaryFocus?.unfocus();
+                                // Small delay to ensure keyboard is closed
+                                Future.delayed(const Duration(milliseconds: 100), () {
+                                  _showBarberSelectionSheet(service);
+                                });
+                              },
+                              borderRadius: BorderRadius.circular(16),
+                              child: Card(
+                                elevation: 2,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(8.0),
                                   child: Column(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Icon(_getIconForCategory(service.category), size: 32, color: theme.colorScheme.secondary),
-                                      const SizedBox(height: 12),
-                                      Text(service.name, style: theme.textTheme.titleMedium, textAlign: TextAlign.center),
+                                      // Show image from API or fallback to icon
+                                      service.image.isNotEmpty && 
+                                      (service.image.startsWith('http://') || service.image.startsWith('https://'))
+                                          ? ClipRRect(
+                                              borderRadius: BorderRadius.circular(8),
+                                              child: Image.network(
+                                                service.image,
+                                                width: 40,
+                                                height: 40,
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (context, error, stackTrace) {
+                                                  // Fallback to icon if image fails to load
+                                                  return Icon(
+                                                    _getIconForCategory(service.category),
+                                                    size: 32,
+                                                    color: theme.colorScheme.secondary,
+                                                  );
+                                                },
+                                                loadingBuilder: (context, child, loadingProgress) {
+                                                  if (loadingProgress == null) return child;
+                                                  return SizedBox(
+                                                    width: 50,
+                                                    height: 50,
+                                                    child: Center(
+                                                      child: CircularProgressIndicator(
+                                                        value: loadingProgress.expectedTotalBytes != null
+                                                            ? loadingProgress.cumulativeBytesLoaded /
+                                                                loadingProgress.expectedTotalBytes!
+                                                            : null,
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            )
+                                          : Icon(
+                                              _getIconForCategory(service.category),
+                                              size: 32,
+                                              color: theme.colorScheme.secondary,
+                                            ),
+                                      const SizedBox(height: 8),
+                                      Flexible(
+                                        child: Text(
+                                          service.name,
+                                          style: theme.textTheme.titleMedium,
+                                          textAlign: TextAlign.center,
+                                          overflow: TextOverflow.ellipsis,
+                                          maxLines: 2,
+                                        ),
+                                      ),
                                       const SizedBox(height: 4),
-                                      Text("${service.price.toStringAsFixed(0)} ر.س", style: GoogleFonts.cairo(color: theme.colorScheme.secondary, fontWeight: FontWeight.bold)),
+                                      Text(
+                                        "${service.price.toStringAsFixed(0)} ر.س",
+                                        style: GoogleFonts.cairo(
+                                          color: theme.colorScheme.secondary,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
                                     ],
                                   ),
                                 ),
-                              );
-                            },
-                          ),
+                              ),
+                            );
+                          },
                         ),
-                        // Show cart if not empty
-                        if (loadedState.cart.isNotEmpty)
-                          CartSection(
+                      ),
+                      // Animated Cart Section - Draggable from bottom
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                        left: 0,
+                        right: 0,
+                        bottom: loadedState.cart.isEmpty ? -_cartHeight : 0, // Hidden below screen when empty
+                        height: _cartHeight, // Dynamic height
+                        child: AnimatedOpacity(
+                          duration: const Duration(milliseconds: 300),
+                          opacity: loadedState.cart.isEmpty ? 0.0 : 1.0,
+                          child: GestureDetector(
+                            onVerticalDragStart: (details) {
+                              // Haptic feedback when drag starts
+                              HapticFeedback.selectionClick();
+                            },
+                            onVerticalDragUpdate: (details) {
+                              setState(() {
+                                // Dragging down increases height, dragging up decreases
+                                _cartHeight = (_cartHeight - details.delta.dy).clamp(_minCartHeight, _maxCartHeight);
+                              });
+                            },
+                            onVerticalDragEnd: (details) {
+                              // Haptic feedback when drag ends
+                              HapticFeedback.mediumImpact();
+                            },
+                            child: CartSection(
                             cart: loadedState.cart,
                             removeFromCart: (index) {
                               // Call cubit method to remove item
@@ -297,8 +412,10 @@ class _CashierScreenState extends State<CashierScreen> {
                             selectedCustomer: loadedState.selectedCustomer,
                             navigateToInvoice: () => _navigateToInvoice(context, loadedState),
                           ),
-                      ],
-                    ),
+                          ), // GestureDetector closing
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
