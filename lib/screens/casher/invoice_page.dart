@@ -9,7 +9,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../cubits/cashier/cashier_cubit.dart';
 import '../../cubits/cashier/cashier_state.dart';
 import '../../models/payment_method.dart';
-import '../../models/invoice.dart';
 import 'pdf_invoice.dart';
 import 'models/customer.dart';
 import 'models/service-model.dart';
@@ -38,26 +37,28 @@ class _InvoicePageState extends State<InvoicePage> {
 
   double? _paidAmount;
 
-  // API-provided invoice data (will be populated after submission)
-  Invoice? _submittedInvoice;
-
   @override
   void initState() {
     super.initState();
 
-    // Calculate initial total based on service prices only
-    // Tax and discount will be calculated by API
+    // Calculate initial total with tax (matching backend logic)
     final initialSubtotal = widget.cart.fold<double>(
       0,
       (sum, item) => sum + item.price,
     );
-    // Set paid amount to subtotal for now (API will add tax and discount)
-    _paidController.text = initialSubtotal.toStringAsFixed(2);
-    _paidAmount = initialSubtotal;
+
+    // Calculate tax (15%) on subtotal (no discount initially)
+    final initialTax = initialSubtotal * 0.15;
+    final initialTotal = initialSubtotal + initialTax;
+
+    // Set paid amount to total (including tax)
+    _paidController.text = initialTotal.toStringAsFixed(2);
+    _paidAmount = initialTotal;
 
     _discountController.addListener(() {
       setState(() {
-        // Just trigger rebuild, discount will be sent to API
+        // Recalculate totals when discount changes
+        _updatePaidAmountToTotal();
       });
     });
 
@@ -69,6 +70,41 @@ class _InvoicePageState extends State<InvoicePage> {
 
     // Set default service date/time to now
     _selectedServiceDateTime = DateTime.now();
+  }
+
+  /// Update paid amount to match the calculated total
+  void _updatePaidAmountToTotal() {
+    final calculations = _calculateTotals();
+    _paidController.text = calculations['finalTotal']!.toStringAsFixed(2);
+    _paidAmount = calculations['finalTotal'];
+  }
+
+  /// Calculate all totals matching backend logic:
+  /// 1. Subtotal = sum of service prices
+  /// 2. Discount Amount = Subtotal × (discount% / 100)
+  /// 3. Amount After Discount = Subtotal - Discount Amount
+  /// 4. Tax = Amount After Discount × 0.15 (15%)
+  /// 5. Final Total = Amount After Discount + Tax
+  Map<String, double> _calculateTotals() {
+    final subtotal = widget.cart.fold<double>(
+      0,
+      (sum, item) => sum + item.price,
+    );
+
+    final discountPercentage = double.tryParse(_discountController.text) ?? 0.0;
+    final discountAmount = subtotal * (discountPercentage / 100);
+    final amountAfterDiscount = subtotal - discountAmount;
+    final taxAmount = amountAfterDiscount * 0.15; // 15% tax
+    final finalTotal = amountAfterDiscount + taxAmount;
+
+    return {
+      'subtotal': subtotal,
+      'discountPercentage': discountPercentage,
+      'discountAmount': discountAmount,
+      'amountAfterDiscount': amountAfterDiscount,
+      'taxAmount': taxAmount,
+      'finalTotal': finalTotal,
+    };
   }
 
   @override
@@ -129,39 +165,37 @@ class _InvoicePageState extends State<InvoicePage> {
     setState(() => _isSaving = true);
 
     try {
-      // Don't calculate tax/discount locally - let API do it
-      final subtotal = widget.cart.fold<double>(
-        0,
-        (sum, item) => sum + item.price,
-      );
-      final discountPercentage =
-          double.tryParse(_discountController.text) ?? 0.0;
-      final paidAmount = double.tryParse(_paidController.text) ?? subtotal;
+      // Calculate totals locally (matching backend logic)
+      final calculations = _calculateTotals();
+      final subtotal = calculations['subtotal']!;
+      final discountPercentage = calculations['discountPercentage']!;
+      final discountAmount = calculations['discountAmount']!;
+      final taxAmount = calculations['taxAmount']!;
+      final finalTotal = calculations['finalTotal']!;
+      final paidAmount = double.tryParse(_paidController.text) ?? finalTotal;
 
-      print('💰 Invoice Submission (API will calculate):');
+      print('💰 Invoice Submission (Calculated in App):');
       print('  Subtotal: $subtotal');
       print('  Discount %: $discountPercentage');
+      print('  Discount Amount: $discountAmount');
+      print('  Amount After Discount: ${calculations['amountAfterDiscount']}');
+      print('  Tax (15%): $taxAmount');
+      print('  Final Total: $finalTotal');
       print('  Paid Amount: $paidAmount');
-      print('  Note: Tax and final totals will be calculated by API');
 
       // Get payment type from payment methods
       final apiPaymentType = _getPaymentTypeForApi(context);
 
-      // Submit to API - it will calculate tax, discount, and totals
+      // Submit to API with calculated values
       final invoice = await context.read<CashierCubit>().submitInvoice(
         paymentType: apiPaymentType,
-        tax: 0, // Let API calculate based on configuration
+        tax: 0, // Backend will calculate, but we've already shown user
         discount: discountPercentage, // Send as percentage
         paid: paidAmount,
       );
 
       if (invoice != null && mounted) {
-        // Store the invoice with API-calculated values
-        setState(() {
-          _submittedInvoice = invoice;
-        });
-
-        print('✅ Invoice saved with API values:');
+        print('✅ Invoice saved with calculated values:');
         print(
           '  Subtotal Before Tax: ${invoice.subtotalBeforeTax ?? invoice.subtotal}',
         );
@@ -205,27 +239,30 @@ class _InvoicePageState extends State<InvoicePage> {
     setState(() => _isSaving = true);
 
     try {
-      // Don't calculate tax/discount locally - let API do it
-      final subtotal = widget.cart.fold<double>(
-        0,
-        (sum, item) => sum + item.price,
-      );
-      final discountPercentage =
-          double.tryParse(_discountController.text) ?? 0.0;
-      final paidAmount = double.tryParse(_paidController.text) ?? subtotal;
+      // Calculate totals locally (matching backend logic)
+      final calculations = _calculateTotals();
+      final subtotal = calculations['subtotal']!;
+      final discountPercentage = calculations['discountPercentage']!;
+      final discountAmount = calculations['discountAmount']!;
+      final taxAmount = calculations['taxAmount']!;
+      final finalTotal = calculations['finalTotal']!;
+      final paidAmount = double.tryParse(_paidController.text) ?? finalTotal;
 
-      print('💰 Invoice Submission (Save & Print - API will calculate):');
+      print('💰 Invoice Submission (Save & Print - Calculated in App):');
       print('  Subtotal: $subtotal');
       print('  Discount %: $discountPercentage');
+      print('  Discount Amount: $discountAmount');
+      print('  Amount After Discount: ${calculations['amountAfterDiscount']}');
+      print('  Tax (15%): $taxAmount');
+      print('  Final Total: $finalTotal');
       print('  Paid Amount: $paidAmount');
-      print('  Note: Tax and final totals will be calculated by API');
 
-      // First save the invoice - API will calculate tax, discount, and totals
+      // First save the invoice
       final apiPaymentType = _getPaymentTypeForApi(context);
 
       final invoice = await context.read<CashierCubit>().submitInvoice(
         paymentType: apiPaymentType,
-        tax: 0, // Let API calculate
+        tax: 0, // Backend will calculate
         discount: discountPercentage,
         paid: paidAmount,
       );
@@ -234,12 +271,7 @@ class _InvoicePageState extends State<InvoicePage> {
         throw Exception('فشل في حفظ الفاتورة');
       }
 
-      // Store the invoice with API-calculated values
-      setState(() {
-        _submittedInvoice = invoice;
-      });
-
-      print('✅ Invoice saved with API values:');
+      print('✅ Invoice saved with calculated values:');
       print(
         '  Subtotal Before Tax: ${invoice.subtotalBeforeTax ?? invoice.subtotal}',
       );
@@ -443,24 +475,17 @@ class _InvoicePageState extends State<InvoicePage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // Calculate subtotal from services (before tax)
-    final subtotalBeforeTax = widget.cart.fold<double>(
-      0,
-      (sum, item) => sum + item.price,
-    );
+    // Calculate totals using the same logic as backend
+    final calculations = _calculateTotals();
+    final subtotal = calculations['subtotal']!;
+    final discountAmount = calculations['discountAmount']!;
+    final amountAfterDiscount = calculations['amountAfterDiscount']!;
+    final taxAmount = calculations['taxAmount']!;
+    final finalTotal = calculations['finalTotal']!;
 
-    // If we have submitted invoice with API values, use those
-    // Otherwise show estimated/placeholder values with note
-    final taxAmount = _submittedInvoice?.taxAmount ?? 0.0;
-    final totalAfterTax = _submittedInvoice?.totalAfterTax ?? subtotalBeforeTax;
-    final discountAmount = _submittedInvoice?.discountAmount ?? 0.0;
-    final finalTotal = _submittedInvoice?.finalTotal ?? subtotalBeforeTax;
-    final paidAmount =
-        _submittedInvoice?.paidAmount ?? _paidAmount ?? subtotalBeforeTax;
-    final remainingAmount = _submittedInvoice?.remainingAmount ?? 0.0;
-
-    // For display before submission, show note that values are estimates
-    final showEstimateNote = _submittedInvoice == null;
+    // Use calculated values for display
+    final paidAmount = _paidAmount ?? finalTotal;
+    final remainingAmount = finalTotal - paidAmount;
 
     return Scaffold(
       appBar: AppBar(
@@ -471,49 +496,20 @@ class _InvoicePageState extends State<InvoicePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (showEstimateNote)
-              Container(
-                margin: const EdgeInsets.only(bottom: 16),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: Colors.blue.shade700,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'الضريبة والخصم سيتم حسابهما بواسطة النظام عند الحفظ',
-                        style: TextStyle(
-                          color: Colors.blue.shade700,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             _buildInfoSection(theme),
             const SizedBox(height: 24),
             _buildServicesTable(theme),
             const SizedBox(height: 24),
             _buildTotalsSection(
               theme,
-              subtotalBeforeTax,
+              subtotal,
               taxAmount,
-              totalAfterTax,
+              amountAfterDiscount,
               discountAmount,
               finalTotal,
               paidAmount,
               remainingAmount,
-              showEstimateNote,
+              false, // showEstimateNote removed
             ),
             const SizedBox(height: 32),
             Row(
@@ -700,9 +696,9 @@ class _InvoicePageState extends State<InvoicePage> {
 
   Widget _buildTotalsSection(
     ThemeData theme,
-    double subtotalBeforeTax,
+    double subtotal,
     double taxAmount,
-    double totalAfterTax,
+    double amountAfterDiscount,
     double discountAmount,
     double finalTotal,
     double paidAmount,
@@ -716,33 +712,15 @@ class _InvoicePageState extends State<InvoicePage> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // Step 1: Subtotal Before Tax
+            // Step 1: Subtotal Before Tax and Discount
             _buildTotalRow(
               theme,
-              "الإجمالي قبل الضريبة:",
-              "${subtotalBeforeTax.toStringAsFixed(2)} ر.س",
+              "الإجمالي قبل الضريبة والخصم:",
+              "${subtotal.toStringAsFixed(2)} ر.س",
             ),
             const SizedBox(height: 8),
 
-            // Step 2: Tax Amount (always show value)
-            _buildTotalRow(
-              theme,
-              "الضريبة:",
-              "${taxAmount.toStringAsFixed(2)} ر.س",
-              color: taxAmount > 0 ? null : Colors.grey,
-            ),
-            const SizedBox(height: 8),
-
-            // Step 3: Total After Tax (always show value)
-            _buildTotalRow(
-              theme,
-              "الإجمالي بعد الضريبة:",
-              "${totalAfterTax.toStringAsFixed(2)} ر.س",
-              color: totalAfterTax > 0 ? null : Colors.grey,
-            ),
-            const SizedBox(height: 8),
-
-            // Step 4: Discount Input
+            // Step 2: Discount Input
             _buildInfoRow(
               theme,
               "خصم (%):",
@@ -752,7 +730,7 @@ class _InvoicePageState extends State<InvoicePage> {
             ),
             const SizedBox(height: 8),
 
-            // Step 5: Discount Amount (always show value)
+            // Step 3: Discount Amount (calculated)
             _buildTotalRow(
               theme,
               "مبلغ الخصم:",
@@ -760,6 +738,24 @@ class _InvoicePageState extends State<InvoicePage> {
                   ? "-${discountAmount.toStringAsFixed(2)} ر.س"
                   : "0.00 ر.س",
               color: discountAmount > 0 ? Colors.redAccent : Colors.grey,
+            ),
+            const SizedBox(height: 8),
+
+            // Step 4: Amount After Discount (before tax)
+            _buildTotalRow(
+              theme,
+              "المبلغ بعد الخصم:",
+              "${amountAfterDiscount.toStringAsFixed(2)} ر.س",
+              color: Colors.blue.shade700,
+            ),
+            const SizedBox(height: 8),
+
+            // Step 5: Tax Amount (15% on amount after discount)
+            _buildTotalRow(
+              theme,
+              "الضريبة (15%):",
+              "${taxAmount.toStringAsFixed(2)} ر.س",
+              color: taxAmount > 0 ? Colors.orange.shade700 : Colors.grey,
             ),
             const Divider(height: 24),
 
@@ -769,12 +765,10 @@ class _InvoicePageState extends State<InvoicePage> {
               children: [
                 Text("الإجمالي النهائي:", style: theme.textTheme.titleLarge),
                 Text(
-                  finalTotal > 0
-                      ? "${finalTotal.toStringAsFixed(2)} ر.س"
-                      : "${subtotalBeforeTax.toStringAsFixed(2)} ر.س (تقريبي)",
+                  "${finalTotal.toStringAsFixed(2)} ر.س",
                   style: theme.textTheme.titleLarge?.copyWith(
-                    fontStyle: showEstimateNote ? FontStyle.italic : null,
-                    color: showEstimateNote ? Colors.grey.shade700 : null,
+                    color: Colors.green.shade700,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ],
@@ -816,15 +810,14 @@ class _InvoicePageState extends State<InvoicePage> {
                       ),
                       const SizedBox(width: 8),
                       ElevatedButton(
-                        onPressed: finalTotal > 0
-                            ? () {
-                                setState(() {
-                                  _paidAmount = finalTotal;
-                                  _paidController.text = finalTotal
-                                      .toStringAsFixed(2);
-                                });
-                              }
-                            : null,
+                        onPressed: () {
+                          setState(() {
+                            _paidAmount = finalTotal;
+                            _paidController.text = finalTotal.toStringAsFixed(
+                              2,
+                            );
+                          });
+                        },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.green,
                           foregroundColor: Colors.white,
@@ -845,7 +838,7 @@ class _InvoicePageState extends State<InvoicePage> {
             ),
             const Divider(height: 24),
 
-            // Step 8: Remaining Amount Display (from API)
+            // Step 8: Remaining Amount Display
             if (remainingAmount > 0.01) // Customer owes money
               Container(
                 padding: const EdgeInsets.all(12),
@@ -862,26 +855,7 @@ class _InvoicePageState extends State<InvoicePage> {
                   isBold: true,
                 ),
               )
-            else if (paidAmount > 0 &&
-                paidAmount < finalTotal &&
-                remainingAmount == 0) // Calculate locally if API didn't provide
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.orange.shade200),
-                ),
-                child: _buildTotalRow(
-                  theme,
-                  "الباقي:",
-                  "${(finalTotal - paidAmount).toStringAsFixed(2)} ر.س",
-                  color: Colors.orange.shade700,
-                  isBold: true,
-                ),
-              )
-            else if (remainingAmount <
-                -0.01) // Change to return (negative remaining)
+            else if (remainingAmount < -0.01) // Change to return
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -894,40 +868,6 @@ class _InvoicePageState extends State<InvoicePage> {
                   "الباقي (يُرجع للعميل):",
                   "${(-remainingAmount).toStringAsFixed(2)} ر.س",
                   color: Colors.green.shade700,
-                  isBold: true,
-                ),
-              )
-            else if (paidAmount > finalTotal &&
-                remainingAmount == 0) // Calculate change locally
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green.shade200),
-                ),
-                child: _buildTotalRow(
-                  theme,
-                  "الباقي (يُرجع للعميل):",
-                  "${(paidAmount - finalTotal).toStringAsFixed(2)} ر.س",
-                  color: Colors.green.shade700,
-                  isBold: true,
-                ),
-              )
-            else if (paidAmount > 0 &&
-                (paidAmount - finalTotal).abs() < 0.01) // Fully paid
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: _buildTotalRow(
-                  theme,
-                  "✓ المبلغ مدفوع بالكامل",
-                  "",
-                  color: Colors.blue.shade700,
                   isBold: true,
                 ),
               ),
