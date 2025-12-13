@@ -20,26 +20,61 @@ class ReceiptGenerator {
   static const int PAPER_WIDTH = 48; // 80mm paper = ~48 characters
 
   /// Generate image-based receipt bytes that match the reference exactly
+  /// Now accepts optional tax and discount amounts from API
+  /// If not provided, will calculate using default rates (for backward compatibility)
   Future<List<int>> generateReceiptBytes({
     required String orderNumber,
     required Customer? customer,
     required List<ServiceModel> services,
-    required double discount,
+    required double discount, // Can be discount percentage or amount
     required String cashierName,
     required String paymentMethod,
     required String branchName,
+    double? paid,
+    double? remaining,
+    // NEW: API-provided calculated values (preferred)
+    double? apiSubtotal,
+    double? apiTaxAmount,
+    double? apiDiscountAmount,
+    double? apiGrandTotal,
   }) async {
     final profile = await CapabilityProfile.load();
     final generator = Generator(PaperSize.mm80, profile);
     List<int> bytes = [];
 
-    // Calculate totals
-    final subtotal = services.fold<double>(0, (sum, item) => sum + item.price);
-    final taxableAmount = subtotal;
-    final taxAmount = taxableAmount * 0.15;
-    final finalTotal = taxableAmount + taxAmount;
-    final discountAmount = finalTotal * (discount / 100);
-    final grandTotal = finalTotal - discountAmount;
+    // Calculate totals - prefer API values if provided
+    // CRITICAL: Correct calculation order per business rules:
+    // 1. subtotal_before_tax = sum(service prices)
+    // 2. discount_amount = subtotal * discount_percent (discount applied BEFORE tax)
+    // 3. amount_after_discount = subtotal - discount_amount
+    // 4. tax_amount = amount_after_discount * tax_percent (tax calculated AFTER discount)
+    // 5. final_total = amount_after_discount + tax_amount
+
+    final subtotal =
+        apiSubtotal ??
+        services.fold<double>(0, (sum, item) => sum + item.price);
+
+    // Discount applied to subtotal (BEFORE tax)
+    final discountAmount =
+        apiDiscountAmount ?? (discount > 0 ? subtotal * (discount / 100) : 0);
+
+    // Amount after discount (before adding tax)
+    final amountAfterDiscount = subtotal - discountAmount;
+
+    // Tax calculated on discounted amount (AFTER discount)
+    final taxAmount = apiTaxAmount ?? (amountAfterDiscount * 0.15);
+
+    // Grand total = amount after discount + tax
+    final grandTotal = apiGrandTotal ?? (amountAfterDiscount + taxAmount);
+
+    print('📄 Receipt Generation (Correct Calculation Order):');
+    print('  Using API values: ${apiSubtotal != null}');
+    print('  1. Subtotal before tax: $subtotal');
+    print('  2. Discount % input: $discount');
+    print('  3. Discount amount: $discountAmount');
+    print('  4. Amount after discount: $amountAfterDiscount');
+    print('  5. Tax (15% on discounted amount): $taxAmount');
+    print('  6. Grand Total: $grandTotal');
 
     try {
       // 1. HEADER SECTION - Logo + Store Info
@@ -61,14 +96,17 @@ class ReceiptGenerator {
       // 4. ITEMS TABLE (with borders)
       _addItemsTable(generator, bytes, services: services);
 
-      // 5. TOTALS SECTION
+      // 5. TOTALS SECTION - use calculated/API values
       _addTotalsSection(
         generator,
         bytes,
-        subtotal: taxableAmount,
+        subtotal: subtotal,
         taxAmount: taxAmount,
         finalTotal: grandTotal,
         discount: discountAmount,
+        paid: paid,
+        remaining: remaining,
+        paymentMethod: paymentMethod,
       );
 
       // 6. FOOTER - Thank you message
@@ -139,9 +177,7 @@ class ReceiptGenerator {
     // Phone
     bytes += generator.text(
       'هاتف: 0565656565',
-      styles: const PosStyles(
-        align: PosAlign.center,
-      ),
+      styles: const PosStyles(align: PosAlign.center),
     );
 
     bytes += generator.feed(1);
@@ -152,7 +188,7 @@ class ReceiptGenerator {
   /// Add title "فاتورة ضريبية مبسطة"
   void _addTitle(Generator generator, List<int> bytes) {
     bytes += generator.text(
-      'فاتورة ضريبية مبسطة',
+      'فاتورة ضريبية ',
       styles: const PosStyles(
         align: PosAlign.center,
         bold: true,
@@ -202,9 +238,15 @@ class ReceiptGenerator {
   }
 
   /// Add a single table row with label and value
-  void _addTableRow(Generator generator, List<int> bytes, String label, String value) {
+  void _addTableRow(
+    Generator generator,
+    List<int> bytes,
+    String label,
+    String value,
+  ) {
     // Calculate padding
-    final contentLength = label.length + value.length + 3; // 3 for separators and spaces
+    final contentLength =
+        label.length + value.length + 3; // 3 for separators and spaces
     final padding = PAPER_WIDTH - 2 - contentLength; // 2 for borders
 
     String paddingStr = ' ' * (padding > 0 ? padding : 1);
@@ -232,13 +274,9 @@ class ReceiptGenerator {
     bytes += generator.text('┌' + '─' * (PAPER_WIDTH - 2) + '┐');
 
     // Column headers (RTL: Description | Price | Qty | Total)
-    bytes += generator.text(_formatItemRow(
-      'الوصف',
-      'السعر',
-      'الكمية',
-      'الإجمالي',
-      bold: true,
-    ));
+    bytes += generator.text(
+      _formatItemRow('الوصف', 'السعر', 'الكمية', 'الإجمالي', bold: true),
+    );
 
     bytes += generator.text('├' + '─' * (PAPER_WIDTH - 2) + '┤');
 
@@ -248,12 +286,9 @@ class ReceiptGenerator {
       final quantity = '1';
       final total = service.price.toStringAsFixed(2);
 
-      bytes += generator.text(_formatItemRow(
-        service.name,
-        price,
-        quantity,
-        total,
-      ));
+      bytes += generator.text(
+        _formatItemRow(service.name, price, quantity, total),
+      );
     }
 
     // Table border bottom
@@ -262,7 +297,13 @@ class ReceiptGenerator {
   }
 
   /// Format a single item row with proper column widths
-  String _formatItemRow(String desc, String price, String qty, String total, {bool bold = false}) {
+  String _formatItemRow(
+    String desc,
+    String price,
+    String qty,
+    String total, {
+    bool bold = false,
+  }) {
     // Column widths (adjust based on paper width)
     const descWidth = 20;
     const priceWidth = 8;
@@ -279,7 +320,11 @@ class ReceiptGenerator {
   }
 
   /// Pad or truncate text to fit column width
-  String _padOrTruncate(String text, int width, {TextAlign align = TextAlign.left}) {
+  String _padOrTruncate(
+    String text,
+    int width, {
+    TextAlign align = TextAlign.left,
+  }) {
     if (text.length > width) {
       return text.substring(0, width);
     }
@@ -305,28 +350,33 @@ class ReceiptGenerator {
     required double taxAmount,
     required double finalTotal,
     required double discount,
+    double? paid,
+    double? remaining,
+    String? paymentMethod,
   }) {
     bytes += generator.hr(ch: '─', len: PAPER_WIDTH);
     bytes += generator.feed(1);
 
-    // Subtotal before tax
-    bytes += generator.row([
-      PosColumn(
-        text: 'الإجمالي قبل الضريبة:',
-        width: 6,
-        styles: const PosStyles(align: PosAlign.left),
-      ),
-      PosColumn(
-        text: '${subtotal.toStringAsFixed(2)} ر.س',
-        width: 6,
-        styles: const PosStyles(align: PosAlign.right),
-      ),
-    ]);
+    // Subtotal Before Tax (if non-zero)
+    if (subtotal > 0) {
+      bytes += generator.row([
+        PosColumn(
+          text: 'الإجمالي قبل الضريبة:',
+          width: 6,
+          styles: const PosStyles(align: PosAlign.left),
+        ),
+        PosColumn(
+          text: '${subtotal.toStringAsFixed(2)} ر.س',
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
 
-    // Tax 15%
+    // Tax Amount
     bytes += generator.row([
       PosColumn(
-        text: 'ضريبة القيمة المضافة (15%):',
+        text: 'ضريبة القيمة المضافة:',
         width: 6,
         styles: const PosStyles(align: PosAlign.left),
       ),
@@ -336,6 +386,25 @@ class ReceiptGenerator {
         styles: const PosStyles(align: PosAlign.right),
       ),
     ]);
+
+    // Discount Amount if any
+    if (discount > 0) {
+      bytes += generator.row([
+        PosColumn(
+          text: 'مبلغ الخصم:',
+          width: 6,
+          styles: const PosStyles(align: PosAlign.left),
+        ),
+        PosColumn(
+          text: '-${discount.toStringAsFixed(2)} ر.س',
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
+
+    bytes += generator.feed(1);
+    bytes += generator.hr(ch: '═', len: PAPER_WIDTH);
 
     // Total including tax
     bytes += generator.row([
@@ -347,9 +416,76 @@ class ReceiptGenerator {
       PosColumn(
         text: '${finalTotal.toStringAsFixed(2)} ر.س',
         width: 6,
-        styles: const PosStyles(align: PosAlign.right, bold: true, height: PosTextSize.size1, width: PosTextSize.size1),
+        styles: const PosStyles(
+          align: PosAlign.right,
+          bold: true,
+          height: PosTextSize.size1,
+          width: PosTextSize.size1,
+        ),
       ),
     ]);
+
+    bytes += generator.hr(ch: '═', len: PAPER_WIDTH);
+    bytes += generator.feed(1);
+
+    // Payment Method
+    if (paymentMethod != null && paymentMethod.isNotEmpty) {
+      bytes += generator.row([
+        PosColumn(
+          text: 'طريقة الدفع:',
+          width: 6,
+          styles: const PosStyles(align: PosAlign.left),
+        ),
+        PosColumn(
+          text: paymentMethod,
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]);
+    }
+
+    // Paid Amount
+    if (paid != null) {
+      bytes += generator.row([
+        PosColumn(
+          text: 'المبلغ المدفوع:',
+          width: 6,
+          styles: const PosStyles(align: PosAlign.left, bold: true),
+        ),
+        PosColumn(
+          text: '${paid.toStringAsFixed(2)} ر.س',
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right, bold: true),
+        ),
+      ]);
+    }
+
+    // Remaining/Change Amount
+    if (remaining != null && remaining != 0) {
+      final isChange = remaining < 0;
+      final absRemaining = remaining.abs();
+      bytes += generator.row([
+        PosColumn(
+          text: isChange ? 'الباقي (للعميل):' : 'المتبقي:',
+          width: 6,
+          styles: const PosStyles(align: PosAlign.left, bold: true),
+        ),
+        PosColumn(
+          text: '${absRemaining.toStringAsFixed(2)} ر.س',
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right, bold: true),
+        ),
+      ]);
+    } else if (paid != null && paid >= finalTotal) {
+      // If paid equals or exceeds total, show "مدفوع بالكامل"
+      bytes += generator.row([
+        PosColumn(
+          text: '✓ مدفوع بالكامل',
+          width: 12,
+          styles: const PosStyles(align: PosAlign.center, bold: true),
+        ),
+      ]);
+    }
 
     bytes += generator.feed(1);
     bytes += generator.hr(ch: '═', len: PAPER_WIDTH);
@@ -360,16 +496,11 @@ class ReceiptGenerator {
     bytes += generator.feed(1);
     bytes += generator.text(
       'شكراً لزيارتكم',
-      styles: const PosStyles(
-        align: PosAlign.center,
-        bold: true,
-      ),
+      styles: const PosStyles(align: PosAlign.center, bold: true),
     );
     bytes += generator.text(
       'نتطلع لرؤيتكم مرة أخرى',
-      styles: const PosStyles(
-        align: PosAlign.center,
-      ),
+      styles: const PosStyles(align: PosAlign.center),
     );
     bytes += generator.feed(1);
   }
@@ -381,19 +512,20 @@ class ReceiptGenerator {
       // TLV format for ZATCA (Saudi Arabia)
       final sellerName = 'صالون الشباب';
       final vatNumber = '300000000000003'; // Replace with actual VAT number
-      final timestamp = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
+      final timestamp = DateFormat(
+        'yyyy-MM-dd HH:mm:ss',
+      ).format(DateTime.now());
       final totalStr = total.toStringAsFixed(2);
       final taxStr = (total * 0.15 / 1.15).toStringAsFixed(2);
 
-      final qrData = 'Seller: $sellerName\n'
+      final qrData =
+          'Seller: $sellerName\n'
           'VAT: $vatNumber\n'
           'Time: $timestamp\n'
           'Total: $totalStr SAR\n'
           'Tax: $taxStr SAR';
 
-      bytes += generator.qrcode(
-        qrData,
-      );
+      bytes += generator.qrcode(qrData);
       bytes += generator.feed(1);
     } catch (e) {
       print('Could not generate QR code: $e');
@@ -412,10 +544,18 @@ class ReceiptGenerator {
   ) async {
     List<int> bytes = [];
 
-    bytes += generator.text('صالون الشباب',
-        styles: const PosStyles(align: PosAlign.center, bold: true, height: PosTextSize.size2));
-    bytes += generator.text('فاتورة ضريبية مبسطة',
-        styles: const PosStyles(align: PosAlign.center, bold: true));
+    bytes += generator.text(
+      'صالون الشباب',
+      styles: const PosStyles(
+        align: PosAlign.center,
+        bold: true,
+        height: PosTextSize.size2,
+      ),
+    );
+    bytes += generator.text(
+      'فاتورة ضريبية ',
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    );
     bytes += generator.hr();
     bytes += generator.text('رقم الطلب: $orderNumber');
     bytes += generator.text('العميل: ${customer?.name ?? "عميل كاش"}');
@@ -423,12 +563,16 @@ class ReceiptGenerator {
     bytes += generator.hr();
 
     for (final service in services) {
-      bytes += generator.text('${service.name} - ${service.price.toStringAsFixed(2)} ر.س');
+      bytes += generator.text(
+        '${service.name} - ${service.price.toStringAsFixed(2)} ر.س',
+      );
     }
 
     bytes += generator.hr();
-    bytes += generator.text('الإجمالي: ${total.toStringAsFixed(2)} ر.س',
-        styles: const PosStyles(bold: true, align: PosAlign.right));
+    bytes += generator.text(
+      'الإجمالي: ${total.toStringAsFixed(2)} ر.س',
+      styles: const PosStyles(bold: true, align: PosAlign.right),
+    );
     bytes += generator.feed(2);
     bytes += generator.cut();
 

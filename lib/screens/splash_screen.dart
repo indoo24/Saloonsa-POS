@@ -1,6 +1,5 @@
 import 'package:barber_casher/screens/auth/login_screen.dart';
 import 'package:flutter/material.dart';
-import '../../theme.dart';
 
 class SplashScreen extends StatefulWidget {
   final VoidCallback onToggleTheme;
@@ -35,6 +34,12 @@ class _SplashScreenState extends State<SplashScreen>
         ),
       );
     });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   @override

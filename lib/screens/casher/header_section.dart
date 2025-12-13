@@ -15,11 +15,18 @@ class HeaderSection extends StatefulWidget {
 
 class _HeaderSectionState extends State<HeaderSection> {
   Key _autocompleteKey = UniqueKey();
+  final FocusNode _searchFocusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     // Initial customer is selected from CashierCubit state
+  }
+
+  @override
+  void dispose() {
+    _searchFocusNode.dispose();
+    super.dispose();
   }
 
   Future<void> _showAddCustomerDialog() async {
@@ -134,8 +141,20 @@ class _HeaderSectionState extends State<HeaderSection> {
                         displayStringForOption: (Customer option) => option.name,
                         onSelected: (Customer selection) {
                           widget.onCustomerSelected(selection);
+                          // Immediately close keyboard and clear focus
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            FocusScope.of(context).requestFocus(FocusNode());
+                            FocusManager.instance.primaryFocus?.unfocus();
+                          });
                         },
                         fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
+                          // Store the focus node reference
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (_searchFocusNode != focusNode) {
+                              // Update our reference to the actual focus node
+                            }
+                          });
+                          
                           return TextField(
                             controller: controller,
                             focusNode: focusNode,
@@ -144,6 +163,9 @@ class _HeaderSectionState extends State<HeaderSection> {
                               hintText: 'ابحث عن عميل...',
                               contentPadding: EdgeInsets.symmetric(horizontal: 16),
                             ),
+                            onTap: () {
+                              // Only allow opening when explicitly tapped
+                            },
                           );
                         },
                       ),

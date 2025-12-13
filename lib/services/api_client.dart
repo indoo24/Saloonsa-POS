@@ -28,14 +28,18 @@ class ApiClient {
       final prefs = await SharedPreferences.getInstance();
       _authToken = prefs.getString(_tokenKey);
       _salonId = prefs.getInt(_salonIdKey);
-      
+
       if (_authToken != null) {
         LoggerService.info('API Client initialized with stored token');
       } else {
         LoggerService.info('API Client initialized without token');
       }
     } catch (e, stackTrace) {
-      LoggerService.error('Failed to initialize API Client', error: e, stackTrace: stackTrace);
+      LoggerService.error(
+        'Failed to initialize API Client',
+        error: e,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -78,7 +82,11 @@ class ApiClient {
         return json.decode(userData) as Map<String, dynamic>;
       }
     } catch (e, stackTrace) {
-      LoggerService.error('Failed to get user data', error: e, stackTrace: stackTrace);
+      LoggerService.error(
+        'Failed to get user data',
+        error: e,
+        stackTrace: stackTrace,
+      );
     }
     return null;
   }
@@ -90,7 +98,11 @@ class ApiClient {
       await prefs.setString(_userKey, json.encode(userData));
       LoggerService.info('User data saved');
     } catch (e, stackTrace) {
-      LoggerService.error('Failed to save user data', error: e, stackTrace: stackTrace);
+      LoggerService.error(
+        'Failed to save user data',
+        error: e,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -115,8 +127,10 @@ class ApiClient {
     bool requiresAuth = true,
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl$endpoint').replace(queryParameters: queryParams);
-      
+      final uri = Uri.parse(
+        '$baseUrl$endpoint',
+      ).replace(queryParameters: queryParams);
+
       LoggerService.apiRequest('GET', endpoint, data: queryParams);
 
       final response = await http.get(
@@ -139,7 +153,7 @@ class ApiClient {
   }) async {
     try {
       final uri = Uri.parse('$baseUrl$endpoint');
-      
+
       LoggerService.apiRequest('POST', endpoint, data: body);
 
       final response = await http.post(
@@ -163,7 +177,7 @@ class ApiClient {
   }) async {
     try {
       final uri = Uri.parse('$baseUrl$endpoint');
-      
+
       LoggerService.apiRequest('PUT', endpoint, data: body);
 
       final response = await http.put(
@@ -186,7 +200,7 @@ class ApiClient {
   }) async {
     try {
       final uri = Uri.parse('$baseUrl$endpoint');
-      
+
       LoggerService.apiRequest('DELETE', endpoint);
 
       final response = await http.delete(
@@ -202,12 +216,39 @@ class ApiClient {
   }
 
   /// Handle API response
-  Map<String, dynamic> _handleResponse(http.Response response, String endpoint) {
+  Map<String, dynamic> _handleResponse(
+    http.Response response,
+    String endpoint,
+  ) {
     final statusCode = response.statusCode;
-    
+
     try {
-      final responseData = json.decode(response.body) as Map<String, dynamic>;
-      
+      // Log raw response for debugging truncation issues
+      if (response.body.isEmpty) {
+        LoggerService.error('Empty response body from $endpoint');
+        throw ApiException('الاستجابة فارغة من الخادم');
+      }
+
+      // Try to sanitize common JSON issues from backend
+      String sanitizedBody = response.body;
+
+      // Fix common backend JSON errors:
+      // 1. Missing quotes before property names like: ,commision": -> ,"commision":
+      sanitizedBody = sanitizedBody.replaceAllMapped(
+        RegExp(r',([a-zA-Z_][a-zA-Z0-9_]*)"(:)'),
+        (match) => ',"${match.group(1)}"${match.group(2)}',
+      );
+
+      // If we made changes, log it
+      if (sanitizedBody != response.body) {
+        LoggerService.warning(
+          'Sanitized malformed JSON from backend',
+          data: {'endpoint': endpoint, 'changes': 'Fixed missing quotes'},
+        );
+      }
+
+      final responseData = json.decode(sanitizedBody) as Map<String, dynamic>;
+
       LoggerService.apiResponse(endpoint, statusCode, responseData);
 
       // Success responses (2xx)
@@ -216,20 +257,21 @@ class ApiClient {
       }
 
       // Handle error responses
-      final errorMessage = responseData['message'] as String? ?? 'Unknown error';
-      
+      final errorMessage =
+          responseData['message'] as String? ?? 'Unknown error';
+
       switch (statusCode) {
         case 401:
           // Unauthorized - clear token and throw
           clearAuth();
           throw ApiException('غير مصرح: $errorMessage', statusCode: 401);
-        
+
         case 403:
           throw ApiException('ممنوع: $errorMessage', statusCode: 403);
-        
+
         case 404:
           throw ApiException('غير موجود: $errorMessage', statusCode: 404);
-        
+
         case 422:
           // Validation error
           final errors = responseData['errors'] as Map<String, dynamic>?;
@@ -240,10 +282,10 @@ class ApiClient {
             throw ValidationException(errorMessages, errors: errors);
           }
           throw ValidationException(errorMessage);
-        
+
         case 500:
           throw ApiException('خطأ في الخادم: $errorMessage', statusCode: 500);
-        
+
         default:
           throw ApiException('خطأ: $errorMessage', statusCode: statusCode);
       }
@@ -251,8 +293,40 @@ class ApiClient {
       if (e is ApiException || e is ValidationException) {
         rethrow;
       }
-      LoggerService.apiError(endpoint, 'Failed to parse response: $e');
-      throw ApiException('خطأ في معالجة الاستجابة: ${e.toString()}');
+
+      // Enhanced error logging for JSON parsing issues
+      String errorContext = '';
+      if (e is FormatException) {
+        // Extract character position from error message
+        final match = RegExp(r'character (\d+)').firstMatch(e.toString());
+        if (match != null) {
+          final position = int.parse(match.group(1)!);
+          final start = (position - 50).clamp(0, response.body.length);
+          final end = (position + 50).clamp(0, response.body.length);
+          errorContext =
+              '\n\nContext around error position:\n'
+              '...${response.body.substring(start, end)}...\n'
+              '${' ' * (position - start - 3)}^\n'
+              'Check backend JSON formatting at this location.';
+        }
+      }
+
+      // Log the actual response body for debugging
+      final bodyPreview = response.body.length > 500
+          ? '${response.body.substring(0, 500)}...[truncated]'
+          : response.body;
+
+      LoggerService.error(
+        'Failed to parse response from $endpoint. '
+        'Status: $statusCode, Body length: ${response.body.length}, '
+        'Preview: $bodyPreview$errorContext',
+        error: e,
+      );
+
+      throw ApiException(
+        'خطأ في معالجة الاستجابة: ${e.toString()}\n'
+        'يوجد خطأ في تنسيق البيانات من الخادم. تواصل مع الدعم الفني.',
+      );
     }
   }
 }
@@ -265,7 +339,8 @@ class ApiException implements Exception {
   ApiException(this.message, {this.statusCode});
 
   @override
-  String toString() => 'ApiException: $message${statusCode != null ? ' (Status: $statusCode)' : ''}';
+  String toString() =>
+      'ApiException: $message${statusCode != null ? ' (Status: $statusCode)' : ''}';
 }
 
 /// Custom exception for validation errors
