@@ -1,13 +1,17 @@
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'logger_service.dart';
+import 'network_service.dart';
+import '../core/config/app_config.dart';
 
 /// API Client for handling all HTTP requests
 /// Includes automatic token management and detailed logging
 class ApiClient {
-  // Base URL for API - Change this to match your server
-  static const String baseUrl = 'http://10.0.2.2:8000/api';
+  // Base URL for API - from environment configuration
+  String get baseUrl => AppConfig.current.apiBaseUrl;
 
   // Storage keys
   static const String _tokenKey = 'auth_token';
@@ -127,21 +131,32 @@ class ApiClient {
     bool requiresAuth = true,
   }) async {
     try {
+      // Check network connectivity first
+      await NetworkService().ensureConnected();
+
       final uri = Uri.parse(
         '$baseUrl$endpoint',
       ).replace(queryParameters: queryParams);
 
       LoggerService.apiRequest('GET', endpoint, data: queryParams);
 
-      final response = await http.get(
-        uri,
-        headers: _buildHeaders(includeAuth: requiresAuth),
-      );
+      final response = await http
+          .get(uri, headers: _buildHeaders(includeAuth: requiresAuth))
+          .timeout(
+            AppConfig.current.apiTimeout,
+            onTimeout: () => throw TimeoutException('Request timeout'),
+          );
 
       return _handleResponse(response, endpoint);
+    } on SocketException catch (e, stackTrace) {
+      LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
+      throw NetworkException('لا يوجد اتصال بالإنترنت');
+    } on TimeoutException catch (e, stackTrace) {
+      LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
+      throw NetworkException('انتهت مهلة الطلب. يرجى المحاولة مرة أخرى');
     } catch (e, stackTrace) {
       LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
-      throw ApiException('Network error: ${e.toString()}');
+      throw ApiException('خطأ في الشبكة: ${e.toString()}');
     }
   }
 
@@ -152,20 +167,34 @@ class ApiClient {
     bool requiresAuth = true,
   }) async {
     try {
+      // Check network connectivity first
+      await NetworkService().ensureConnected();
+
       final uri = Uri.parse('$baseUrl$endpoint');
 
       LoggerService.apiRequest('POST', endpoint, data: body);
 
-      final response = await http.post(
-        uri,
-        headers: _buildHeaders(includeAuth: requiresAuth),
-        body: body != null ? json.encode(body) : null,
-      );
+      final response = await http
+          .post(
+            uri,
+            headers: _buildHeaders(includeAuth: requiresAuth),
+            body: body != null ? json.encode(body) : null,
+          )
+          .timeout(
+            AppConfig.current.apiTimeout,
+            onTimeout: () => throw TimeoutException('Request timeout'),
+          );
 
       return _handleResponse(response, endpoint);
+    } on SocketException catch (e, stackTrace) {
+      LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
+      throw NetworkException('لا يوجد اتصال بالإنترنت');
+    } on TimeoutException catch (e, stackTrace) {
+      LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
+      throw NetworkException('انتهت مهلة الطلب. يرجى المحاولة مرة أخرى');
     } catch (e, stackTrace) {
       LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
-      throw ApiException('Network error: ${e.toString()}');
+      throw ApiException('خطأ في الشبكة: ${e.toString()}');
     }
   }
 
@@ -176,20 +205,34 @@ class ApiClient {
     bool requiresAuth = true,
   }) async {
     try {
+      // Check network connectivity first
+      await NetworkService().ensureConnected();
+
       final uri = Uri.parse('$baseUrl$endpoint');
 
       LoggerService.apiRequest('PUT', endpoint, data: body);
 
-      final response = await http.put(
-        uri,
-        headers: _buildHeaders(includeAuth: requiresAuth),
-        body: body != null ? json.encode(body) : null,
-      );
+      final response = await http
+          .put(
+            uri,
+            headers: _buildHeaders(includeAuth: requiresAuth),
+            body: body != null ? json.encode(body) : null,
+          )
+          .timeout(
+            AppConfig.current.apiTimeout,
+            onTimeout: () => throw TimeoutException('Request timeout'),
+          );
 
       return _handleResponse(response, endpoint);
+    } on SocketException catch (e, stackTrace) {
+      LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
+      throw NetworkException('لا يوجد اتصال بالإنترنت');
+    } on TimeoutException catch (e, stackTrace) {
+      LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
+      throw NetworkException('انتهت مهلة الطلب. يرجى المحاولة مرة أخرى');
     } catch (e, stackTrace) {
       LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
-      throw ApiException('Network error: ${e.toString()}');
+      throw ApiException('خطأ في الشبكة: ${e.toString()}');
     }
   }
 
@@ -199,19 +242,30 @@ class ApiClient {
     bool requiresAuth = true,
   }) async {
     try {
+      // Check network connectivity first
+      await NetworkService().ensureConnected();
+
       final uri = Uri.parse('$baseUrl$endpoint');
 
       LoggerService.apiRequest('DELETE', endpoint);
 
-      final response = await http.delete(
-        uri,
-        headers: _buildHeaders(includeAuth: requiresAuth),
-      );
+      final response = await http
+          .delete(uri, headers: _buildHeaders(includeAuth: requiresAuth))
+          .timeout(
+            AppConfig.current.apiTimeout,
+            onTimeout: () => throw TimeoutException('Request timeout'),
+          );
 
       return _handleResponse(response, endpoint);
+    } on SocketException catch (e, stackTrace) {
+      LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
+      throw NetworkException('لا يوجد اتصال بالإنترنت');
+    } on TimeoutException catch (e, stackTrace) {
+      LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
+      throw NetworkException('انتهت مهلة الطلب. يرجى المحاولة مرة أخرى');
     } catch (e, stackTrace) {
       LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
-      throw ApiException('Network error: ${e.toString()}');
+      throw ApiException('خطأ في الشبكة: ${e.toString()}');
     }
   }
 
