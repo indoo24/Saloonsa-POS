@@ -24,7 +24,7 @@ class AppConfig {
   /// Development configuration
   static const AppConfig development = AppConfig._(
     environment: EnvironmentType.development,
-    apiBaseUrl: 'http://192.168.100.8:8000/api',
+    apiBaseUrl: 'http://saloonsa.com/api',
     enableLogging: true,
     enableCrashReporting: false,
     debugShowCheckedModeBanner: true,
@@ -35,7 +35,7 @@ class AppConfig {
   /// Staging configuration
   static const AppConfig staging = AppConfig._(
     environment: EnvironmentType.staging,
-    apiBaseUrl: 'https://staging-api.yourdomain.com/api',
+    apiBaseUrl: 'https://saloonsa.com/api',
     enableLogging: true,
     enableCrashReporting: true,
     debugShowCheckedModeBanner: true,
@@ -46,7 +46,7 @@ class AppConfig {
   /// Production configuration
   static const AppConfig production = AppConfig._(
     environment: EnvironmentType.production,
-    apiBaseUrl: 'https://api.yourdomain.com/api',
+    apiBaseUrl: 'https://saloonsa.com/api',
     enableLogging: false,
     enableCrashReporting: true,
     debugShowCheckedModeBanner: false,

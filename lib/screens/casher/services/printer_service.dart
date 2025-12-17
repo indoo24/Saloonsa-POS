@@ -19,7 +19,7 @@ class PrinterService {
 
   // Bluetooth printer instance
   final BlueThermalPrinter _bluetoothPrinter = BlueThermalPrinter.instance;
-  
+
   // Currently connected printer
   PrinterDevice? _connectedPrinter;
   PrinterDevice? get connectedPrinter => _connectedPrinter;
@@ -42,12 +42,12 @@ class PrinterService {
   /// Scan for WiFi printers on local network
   Future<List<PrinterDevice>> scanWiFiPrinters() async {
     final devices = <PrinterDevice>[];
-    
+
     try {
       // Get local network info
       final networkInfo = NetworkInfo();
       final wifiIP = await networkInfo.getWifiIP();
-      
+
       if (wifiIP == null) {
         return devices;
       }
@@ -61,24 +61,27 @@ class PrinterService {
       final futures = <Future>[];
       for (int i = 1; i <= 254; i++) {
         final ip = '$networkPrefix.$i';
-        futures.add(_checkPrinterAtIP(ip, 9100).then((isAvailable) {
-          if (isAvailable) {
-            devices.add(PrinterDevice(
-              id: 'wifi_$ip',
-              name: 'Network Printer',
-              address: ip,
-              port: 9100,
-              type: PrinterConnectionType.wifi,
-            ));
-          }
-        }));
+        futures.add(
+          _checkPrinterAtIP(ip, 9100).then((isAvailable) {
+            if (isAvailable) {
+              devices.add(
+                PrinterDevice(
+                  id: 'wifi_$ip',
+                  name: 'Network Printer',
+                  address: ip,
+                  port: 9100,
+                  type: PrinterConnectionType.wifi,
+                ),
+              );
+            }
+          }),
+        );
       }
 
       // Wait for all scans with timeout
-      await Future.wait(futures).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => [],
-      );
+      await Future.wait(
+        futures,
+      ).timeout(const Duration(seconds: 10), onTimeout: () => []);
     } catch (e) {
       print('Error scanning WiFi printers: $e');
     }
@@ -89,7 +92,11 @@ class PrinterService {
   /// Check if a printer is available at the given IP and port
   Future<bool> _checkPrinterAtIP(String ip, int port) async {
     try {
-      final socket = await Socket.connect(ip, port, timeout: const Duration(seconds: 1));
+      final socket = await Socket.connect(
+        ip,
+        port,
+        timeout: const Duration(seconds: 1),
+      );
       await socket.close();
       return true;
     } catch (e) {
@@ -138,21 +145,23 @@ class PrinterService {
 
     // Get bonded (paired) devices
     final bondedDevices = await _bluetoothPrinter.getBondedDevices();
-    
+
     if (bondedDevices.isEmpty) {
       print('No paired Bluetooth devices found');
       return devices;
     }
 
     for (var device in bondedDevices) {
-      devices.add(PrinterDevice(
-        id: 'bt_${device.address}',
-        name: device.name ?? 'Unknown Bluetooth Printer',
-        address: device.address,
-        type: PrinterConnectionType.bluetooth,
-      ));
+      devices.add(
+        PrinterDevice(
+          id: 'bt_${device.address}',
+          name: device.name ?? 'Unknown Bluetooth Printer',
+          address: device.address,
+          type: PrinterConnectionType.bluetooth,
+        ),
+      );
     }
-    
+
     print('Found ${devices.length} paired Bluetooth device(s)');
     return devices;
   }
@@ -165,7 +174,7 @@ class PrinterService {
       // USB scanning disabled due to package compatibility issues
       // To re-enable: uncomment usb_serial import and reinstall package
       // final usbDevices = await UsbSerial.listDevices();
-      // 
+      //
       // for (var device in usbDevices) {
       //   devices.add(PrinterDevice(
       //     id: 'usb_${device.deviceId}',
@@ -173,8 +182,10 @@ class PrinterService {
       //     type: PrinterConnectionType.usb,
       //   ));
       // }
-      
-      print('USB printer scanning is currently disabled. Use WiFi or Bluetooth instead.');
+
+      print(
+        'USB printer scanning is currently disabled. Use WiFi or Bluetooth instead.',
+      );
     } catch (e) {
       print('Error scanning USB printers: $e');
     }
@@ -209,7 +220,10 @@ class PrinterService {
       return false;
     }
 
-    final printer = NetworkPrinter(_getEscPosPaperSize(), await esc_pos.CapabilityProfile.load());
+    final printer = NetworkPrinter(
+      _getEscPosPaperSize(),
+      await esc_pos.CapabilityProfile.load(),
+    );
     final result = await printer.connect(device.address!, port: device.port!);
 
     if (result == PosPrintResult.success) {
@@ -237,7 +251,7 @@ class PrinterService {
 
     // Connect
     await _bluetoothPrinter.connect(btDevice);
-    
+
     // Check if connected
     final isConnected = await _bluetoothPrinter.isConnected;
     if (isConnected == true) {
@@ -253,10 +267,12 @@ class PrinterService {
   Future<bool> _connectToUSBPrinter(PrinterDevice device) async {
     // USB connection disabled due to package compatibility issues
     // To re-enable: uncomment usb_serial import and reinstall package
-    
-    print('USB printer connection is currently disabled. Please use WiFi or Bluetooth.');
+
+    print(
+      'USB printer connection is currently disabled. Please use WiFi or Bluetooth.',
+    );
     return false;
-    
+
     /* Original USB connection code (disabled):
     final usbDevices = await UsbSerial.listDevices();
     
@@ -312,7 +328,7 @@ class PrinterService {
           // _usbPort = null;
           break;
       }
-      
+
       _connectedPrinter = null;
       await _clearConnectedPrinter();
     } catch (e) {
@@ -348,23 +364,26 @@ class PrinterService {
   /// Print to WiFi printer
   Future<bool> _printToWiFi(List<int> bytes) async {
     if (_networkPrinter == null || _connectedPrinter == null) return false;
-    
+
     // Reconnect for printing
-    final printer = NetworkPrinter(_getEscPosPaperSize(), await esc_pos.CapabilityProfile.load());
+    final printer = NetworkPrinter(
+      _getEscPosPaperSize(),
+      await esc_pos.CapabilityProfile.load(),
+    );
     final result = await printer.connect(
       _connectedPrinter!.address!,
       port: _connectedPrinter!.port!,
     );
-    
+
     if (result != PosPrintResult.success) {
       return false;
     }
-    
+
     // Send bytes by converting to ESC/POS commands
     // The bytes are already formatted ESC/POS commands from Generator
     printer.rawBytes(bytes);
     printer.disconnect();
-    
+
     return true;
   }
 
@@ -382,7 +401,7 @@ class PrinterService {
     // USB printing disabled due to package compatibility issues
     print('USB printing is currently disabled. Please use WiFi or Bluetooth.');
     return false;
-    
+
     /* Original USB printing code (disabled):
     if (_usbPort == null) return false;
     await _usbPort!.write(Uint8List.fromList(bytes));
@@ -411,7 +430,7 @@ class PrinterService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final jsonString = prefs.getString('connected_printer');
-      
+
       if (jsonString != null) {
         return PrinterDevice.fromJson(jsonDecode(jsonString));
       }
@@ -425,7 +444,7 @@ class PrinterService {
   Future<bool> autoReconnect() async {
     // Load settings first
     await loadSettings();
-    
+
     final savedPrinter = await loadConnectedPrinter();
     if (savedPrinter != null) {
       return await connectToPrinter(savedPrinter);
@@ -448,7 +467,7 @@ class PrinterService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final jsonString = prefs.getString('printer_settings');
-      
+
       if (jsonString != null) {
         _settings = PrinterSettings.fromJson(jsonDecode(jsonString));
       }
@@ -534,7 +553,10 @@ class PrinterService {
       // Paper size info
       bytes += generator.text(
         'Paper Size: ${_settings.paperSize.displayName}',
-        styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.center, bold: true),
+        styles: const esc_pos.PosStyles(
+          align: esc_pos.PosAlign.center,
+          bold: true,
+        ),
       );
       bytes += generator.text(
         'Width: ${_settings.paperSize.charsPerLine} chars/line',
@@ -544,8 +566,9 @@ class PrinterService {
 
       // Date and time
       final now = DateTime.now();
-      final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} '
-                      '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+      final dateStr =
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} '
+          '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
       bytes += generator.text(
         'Date: $dateStr',
         styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.center),
@@ -616,4 +639,3 @@ class PrinterService {
     }
   }
 }
-

@@ -20,7 +20,7 @@ class Category {
     // Handle potential null or numeric types for id
     final id = json['id'];
     final parsedId = id is int ? id : (id is String ? int.tryParse(id) : null);
-    
+
     if (parsedId == null) {
       throw Exception('Category ID is required and must be a valid integer');
     }

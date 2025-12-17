@@ -9,6 +9,7 @@ import 'categories_section.dart';
 import 'models/service-model.dart';
 import 'invoice_page.dart';
 import 'printer_settings_screen.dart';
+import '../settings/settings_screen.dart';
 import '../../cubits/cashier/cashier_cubit.dart';
 import '../../cubits/cashier/cashier_state.dart';
 
@@ -38,7 +39,7 @@ class _CashierScreenState extends State<CashierScreen> {
     // Close keyboard when opening barber selection
     FocusScope.of(context).unfocus();
     FocusManager.instance.primaryFocus?.unfocus();
-    
+
     String? localSelectedBarber;
 
     showModalBottomSheet(
@@ -56,69 +57,77 @@ class _CashierScreenState extends State<CashierScreen> {
             FocusScope.of(sheetContext).unfocus();
           },
           child: Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
-            left: 16,
-            right: 16,
-            top: 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'اختر الحلاق لخدمة "${service.name}"',
-                style: Theme.of(sheetContext).textTheme.titleMedium,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              // Get barbers from CashierCubit state
-              BlocBuilder<CashierCubit, CashierState>(
-                builder: (context, state) {
-                  if (state is! CashierLoaded) return const SizedBox();
-                  
-                  return DropdownButtonFormField<String>(
-                    hint: const Text('الرجاء اختيار حلاق'),
-                    items: state.barbers.map((barber) {
-                      return DropdownMenuItem(
-                        value: barber,
-                        child: Text(barber, style: Theme.of(sheetContext).textTheme.titleMedium)
-                      );
-                    }).toList(),
-                    onChanged: (value) {
-                      localSelectedBarber = value;
-                    },
-                    decoration: const InputDecoration(border: OutlineInputBorder()),
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(sheetContext),
-                      child: const Text('إلغاء'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        if (localSelectedBarber != null) {
-                          // Call cubit method instead of local method
-                          context.read<CashierCubit>().addToCart(service, localSelectedBarber!);
-                          Navigator.pop(sheetContext);
-                        }
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+              left: 16,
+              right: 16,
+              top: 16,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'اختر الحلاق لخدمة "${service.name}"',
+                  style: Theme.of(sheetContext).textTheme.titleMedium,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                // Get barbers from CashierCubit state
+                BlocBuilder<CashierCubit, CashierState>(
+                  builder: (context, state) {
+                    if (state is! CashierLoaded) return const SizedBox();
+
+                    return DropdownButtonFormField<String>(
+                      hint: const Text('الرجاء اختيار حلاق'),
+                      items: state.barbers.map((barber) {
+                        return DropdownMenuItem(
+                          value: barber,
+                          child: Text(
+                            barber,
+                            style: Theme.of(sheetContext).textTheme.titleMedium,
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        localSelectedBarber = value;
                       },
-                      child: const Text('تأكيد'),
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        child: const Text('إلغاء'),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          if (localSelectedBarber != null) {
+                            // Call cubit method instead of local method
+                            context.read<CashierCubit>().addToCart(
+                              service,
+                              localSelectedBarber!,
+                            );
+                            Navigator.pop(sheetContext);
+                          }
+                        },
+                        child: const Text('تأكيد'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
           ), // GestureDetector closing
         );
       },
@@ -127,13 +136,20 @@ class _CashierScreenState extends State<CashierScreen> {
 
   IconData _getIconForCategory(String category) {
     switch (category) {
-      case "قص الشعر": return Icons.content_cut;
-      case "حلاقة ذقن": return Icons.face_retouching_natural;
-      case "العناية بالبشرة": return Icons.cleaning_services;
-      case "الصبغات": return Icons.brush;
-      case "استشوار": return Icons.air;
-      case "تسريحة": return Icons.style;
-      default: return Icons.cut;
+      case "قص الشعر":
+        return Icons.content_cut;
+      case "حلاقة ذقن":
+        return Icons.face_retouching_natural;
+      case "العناية بالبشرة":
+        return Icons.cleaning_services;
+      case "الصبغات":
+        return Icons.brush;
+      case "استشوار":
+        return Icons.air;
+      case "تسريحة":
+        return Icons.style;
+      default:
+        return Icons.cut;
     }
   }
 
@@ -220,10 +236,21 @@ class _CashierScreenState extends State<CashierScreen> {
           appBar: AppBar(
             title: Text("الكاشير", style: theme.appBarTheme.titleTextStyle),
             actions: [
+              // Settings button (NEW)
+              IconButton(
+                tooltip: "الإعدادات",
+                icon: const Icon(Icons.settings_outlined),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  );
+                },
+              ),
               // Printer Settings button
               IconButton(
                 tooltip: "إعدادات الطابعة",
-                icon: const Icon(Icons.settings),
+                icon: const Icon(Icons.print),
                 onPressed: () {
                   Navigator.push(
                     context,
@@ -234,7 +261,9 @@ class _CashierScreenState extends State<CashierScreen> {
                 },
               ),
               IconButton(
-                tooltip: isDarkMode ? "التبديل إلى الوضع الفاتح" : "التبديل إلى الوضع الداكن",
+                tooltip: isDarkMode
+                    ? "التبديل إلى الوضع الفاتح"
+                    : "التبديل إلى الوضع الداكن",
                 icon: Icon(isDarkMode ? Icons.light_mode : Icons.dark_mode),
                 onPressed: widget.onToggleTheme,
               ),
@@ -280,15 +309,18 @@ class _CashierScreenState extends State<CashierScreen> {
                         top: 0,
                         left: 0,
                         right: 0,
-                        bottom: loadedState.cart.isEmpty ? 0 : _cartHeight, // Dynamic cart height
+                        bottom: loadedState.cart.isEmpty
+                            ? 0
+                            : _cartHeight, // Dynamic cart height
                         child: GridView.builder(
                           padding: const EdgeInsets.all(12),
-                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: crossAxisCount,
-                            childAspectRatio: 1.2,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                          ),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: crossAxisCount,
+                                childAspectRatio: 1.2,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                              ),
                           // Use filtered services from state
                           itemCount: loadedState.filteredServices.length,
                           itemBuilder: (context, index) {
@@ -299,9 +331,12 @@ class _CashierScreenState extends State<CashierScreen> {
                                 FocusScope.of(context).unfocus();
                                 FocusManager.instance.primaryFocus?.unfocus();
                                 // Small delay to ensure keyboard is closed
-                                Future.delayed(const Duration(milliseconds: 100), () {
-                                  _showBarberSelectionSheet(service);
-                                });
+                                Future.delayed(
+                                  const Duration(milliseconds: 100),
+                                  () {
+                                    _showBarberSelectionSheet(service);
+                                  },
+                                );
                               },
                               borderRadius: BorderRadius.circular(16),
                               child: Card(
@@ -312,33 +347,54 @@ class _CashierScreenState extends State<CashierScreen> {
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       // Show image from API or fallback to icon
-                                      service.image.isNotEmpty && 
-                                      (service.image.startsWith('http://') || service.image.startsWith('https://'))
+                                      service.image.isNotEmpty &&
+                                              (service.image.startsWith(
+                                                    'http://',
+                                                  ) ||
+                                                  service.image.startsWith(
+                                                    'https://',
+                                                  ))
                                           ? ClipRRect(
-                                              borderRadius: BorderRadius.circular(8),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
                                               child: Image.network(
                                                 service.image,
                                                 width: 40,
                                                 height: 40,
                                                 fit: BoxFit.cover,
-                                                errorBuilder: (context, error, stackTrace) {
-                                                  // Fallback to icon if image fails to load
-                                                  return Icon(
-                                                    _getIconForCategory(service.category),
-                                                    size: 32,
-                                                    color: theme.colorScheme.secondary,
-                                                  );
-                                                },
+                                                errorBuilder:
+                                                    (
+                                                      context,
+                                                      error,
+                                                      stackTrace,
+                                                    ) {
+                                                      // Fallback to icon if image fails to load
+                                                      return Icon(
+                                                        _getIconForCategory(
+                                                          service.category,
+                                                        ),
+                                                        size: 32,
+                                                        color: theme
+                                                            .colorScheme
+                                                            .secondary,
+                                                      );
+                                                    },
                                                 loadingBuilder: (context, child, loadingProgress) {
-                                                  if (loadingProgress == null) return child;
+                                                  if (loadingProgress == null)
+                                                    return child;
                                                   return SizedBox(
                                                     width: 50,
                                                     height: 50,
                                                     child: Center(
                                                       child: CircularProgressIndicator(
-                                                        value: loadingProgress.expectedTotalBytes != null
-                                                            ? loadingProgress.cumulativeBytesLoaded /
-                                                                loadingProgress.expectedTotalBytes!
+                                                        value:
+                                                            loadingProgress
+                                                                    .expectedTotalBytes !=
+                                                                null
+                                                            ? loadingProgress
+                                                                      .cumulativeBytesLoaded /
+                                                                  loadingProgress
+                                                                      .expectedTotalBytes!
                                                             : null,
                                                       ),
                                                     ),
@@ -347,9 +403,12 @@ class _CashierScreenState extends State<CashierScreen> {
                                               ),
                                             )
                                           : Icon(
-                                              _getIconForCategory(service.category),
+                                              _getIconForCategory(
+                                                service.category,
+                                              ),
                                               size: 32,
-                                              color: theme.colorScheme.secondary,
+                                              color:
+                                                  theme.colorScheme.secondary,
                                             ),
                                       const SizedBox(height: 8),
                                       Flexible(
@@ -383,7 +442,9 @@ class _CashierScreenState extends State<CashierScreen> {
                         curve: Curves.easeInOut,
                         left: 0,
                         right: 0,
-                        bottom: loadedState.cart.isEmpty ? -_cartHeight : 0, // Hidden below screen when empty
+                        bottom: loadedState.cart.isEmpty
+                            ? -_cartHeight
+                            : 0, // Hidden below screen when empty
                         height: _cartHeight, // Dynamic height
                         child: AnimatedOpacity(
                           duration: const Duration(milliseconds: 300),
@@ -396,7 +457,8 @@ class _CashierScreenState extends State<CashierScreen> {
                             onVerticalDragUpdate: (details) {
                               setState(() {
                                 // Dragging down increases height, dragging up decreases
-                                _cartHeight = (_cartHeight - details.delta.dy).clamp(_minCartHeight, _maxCartHeight);
+                                _cartHeight = (_cartHeight - details.delta.dy)
+                                    .clamp(_minCartHeight, _maxCartHeight);
                               });
                             },
                             onVerticalDragEnd: (details) {
@@ -404,14 +466,17 @@ class _CashierScreenState extends State<CashierScreen> {
                               HapticFeedback.mediumImpact();
                             },
                             child: CartSection(
-                            cart: loadedState.cart,
-                            removeFromCart: (index) {
-                              // Call cubit method to remove item
-                              context.read<CashierCubit>().removeFromCart(index);
-                            },
-                            selectedCustomer: loadedState.selectedCustomer,
-                            navigateToInvoice: () => _navigateToInvoice(context, loadedState),
-                          ),
+                              cart: loadedState.cart,
+                              removeFromCart: (index) {
+                                // Call cubit method to remove item
+                                context.read<CashierCubit>().removeFromCart(
+                                  index,
+                                );
+                              },
+                              selectedCustomer: loadedState.selectedCustomer,
+                              navigateToInvoice: () =>
+                                  _navigateToInvoice(context, loadedState),
+                            ),
                           ), // GestureDetector closing
                         ),
                       ),

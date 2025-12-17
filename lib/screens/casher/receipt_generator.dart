@@ -5,6 +5,8 @@ import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:intl/intl.dart';
 import 'models/customer.dart';
 import 'models/service-model.dart';
+import '../../models/app_settings.dart';
+import '../../services/settings_service.dart';
 
 /// Enhanced receipt generator that matches the reference image exactly
 /// This generates a professional tax invoice with:
@@ -18,6 +20,7 @@ import 'models/service-model.dart';
 /// - QR code centered
 class ReceiptGenerator {
   static const int PAPER_WIDTH = 48; // 80mm paper = ~48 characters
+  final SettingsService _settingsService = SettingsService();
 
   /// Generate image-based receipt bytes that match the reference exactly
   /// Now accepts optional tax and discount amounts from API
@@ -38,6 +41,9 @@ class ReceiptGenerator {
     double? apiDiscountAmount,
     double? apiGrandTotal,
   }) async {
+    // Load settings to get tax rate and business info
+    final settings = await _settingsService.loadSettings();
+
     final profile = await CapabilityProfile.load();
     final generator = Generator(PaperSize.mm80, profile);
     List<int> bytes = [];
@@ -61,24 +67,26 @@ class ReceiptGenerator {
     // Amount after discount (before adding tax)
     final amountAfterDiscount = subtotal - discountAmount;
 
-    // Tax calculated on discounted amount (AFTER discount)
-    final taxAmount = apiTaxAmount ?? (amountAfterDiscount * 0.15);
+    // Tax calculated on discounted amount (AFTER discount) - USE SETTINGS
+    final taxAmount =
+        apiTaxAmount ?? (amountAfterDiscount * settings.taxMultiplier);
 
     // Grand total = amount after discount + tax
     final grandTotal = apiGrandTotal ?? (amountAfterDiscount + taxAmount);
 
     print('📄 Receipt Generation (Correct Calculation Order):');
     print('  Using API values: ${apiSubtotal != null}');
+    print('  Tax rate from settings: ${settings.taxValue}%');
     print('  1. Subtotal before tax: $subtotal');
     print('  2. Discount % input: $discount');
     print('  3. Discount amount: $discountAmount');
     print('  4. Amount after discount: $amountAfterDiscount');
-    print('  5. Tax (15% on discounted amount): $taxAmount');
+    print('  5. Tax (${settings.taxValue}% on discounted amount): $taxAmount');
     print('  6. Grand Total: $grandTotal');
 
     try {
-      // 1. HEADER SECTION - Logo + Store Info
-      await _addHeader(generator, bytes);
+      // 1. HEADER SECTION - Logo + Store Info (use settings)
+      await _addHeader(generator, bytes, settings);
 
       // 2. TITLE - "فاتورة ضريبية مبسطة"
       _addTitle(generator, bytes);
@@ -109,8 +117,8 @@ class ReceiptGenerator {
         paymentMethod: paymentMethod,
       );
 
-      // 6. FOOTER - Thank you message
-      _addFooter(generator, bytes);
+      // 6. FOOTER - Thank you message (use settings)
+      _addFooter(generator, bytes, settings);
 
       // 7. QR CODE
       _addQRCode(generator, bytes, grandTotal);
@@ -136,7 +144,11 @@ class ReceiptGenerator {
   }
 
   /// Add header with logo and store information
-  Future<void> _addHeader(Generator generator, List<int> bytes) async {
+  Future<void> _addHeader(
+    Generator generator,
+    List<int> bytes,
+    AppSettings settings,
+  ) async {
     try {
       // Load and print logo
       final ByteData data = await rootBundle.load('assets/images/logo.png');
@@ -154,9 +166,9 @@ class ReceiptGenerator {
       // Continue without logo
     }
 
-    // Store name
+    // Store name - FROM SETTINGS
     bytes += generator.text(
-      'صالون الشباب',
+      settings.businessName,
       styles: const PosStyles(
         align: PosAlign.center,
         bold: true,
@@ -165,20 +177,28 @@ class ReceiptGenerator {
       ),
     );
 
-    // Address
+    // Address - FROM SETTINGS
     bytes += generator.text(
-      'المدينة المنورة، حي النخيل',
+      settings.address,
       styles: const PosStyles(
         align: PosAlign.center,
         height: PosTextSize.size1,
       ),
     );
 
-    // Phone
+    // Phone - FROM SETTINGS
     bytes += generator.text(
-      'هاتف: 0565656565',
+      'هاتف: ${settings.phoneNumber}',
       styles: const PosStyles(align: PosAlign.center),
     );
+
+    // Tax Number - FROM SETTINGS (if provided)
+    if (settings.taxNumber.isNotEmpty) {
+      bytes += generator.text(
+        'الرقم الضريبي: ${settings.taxNumber}',
+        styles: const PosStyles(align: PosAlign.center),
+      );
+    }
 
     bytes += generator.feed(1);
     bytes += generator.hr(ch: '═', len: PAPER_WIDTH);
@@ -492,16 +512,23 @@ class ReceiptGenerator {
   }
 
   /// Add footer with thank you message
-  void _addFooter(Generator generator, List<int> bytes) {
+  void _addFooter(Generator generator, List<int> bytes, AppSettings settings) {
     bytes += generator.feed(1);
-    bytes += generator.text(
-      'شكراً لزيارتكم',
-      styles: const PosStyles(align: PosAlign.center, bold: true),
-    );
-    bytes += generator.text(
-      'نتطلع لرؤيتكم مرة أخرى',
-      styles: const PosStyles(align: PosAlign.center),
-    );
+
+    // Invoice notes from settings
+    if (settings.invoiceNotes.isNotEmpty) {
+      // Split by newlines if multiline
+      final lines = settings.invoiceNotes.split('\n');
+      for (var line in lines) {
+        if (line.trim().isNotEmpty) {
+          bytes += generator.text(
+            line.trim(),
+            styles: const PosStyles(align: PosAlign.center, bold: true),
+          );
+        }
+      }
+    }
+
     bytes += generator.feed(1);
   }
 

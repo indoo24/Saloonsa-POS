@@ -18,7 +18,7 @@
 
     <!-- باقي الملف -->
     <application
-        android:label="barber_casher"
+        android:label="صالون الشباب"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 

@@ -9,8 +9,8 @@ class PrinterCubit extends Cubit<PrinterState> {
   final PrinterService _printerService;
 
   PrinterCubit({PrinterService? printerService})
-      : _printerService = printerService ?? PrinterService(),
-        super(const PrinterInitial());
+    : _printerService = printerService ?? PrinterService(),
+      super(const PrinterInitial());
 
   /// Initialize and auto-reconnect to previously connected printer
   Future<void> initialize() async {
@@ -115,7 +115,7 @@ class PrinterCubit extends Cubit<PrinterState> {
   Future<void> updateSettings(PrinterSettings newSettings) async {
     try {
       await _printerService.updateSettings(newSettings);
-      
+
       // Emit current state again to trigger UI update
       if (_printerService.connectedPrinter != null) {
         emit(PrinterConnected(_printerService.connectedPrinter!));

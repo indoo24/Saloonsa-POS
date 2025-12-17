@@ -161,16 +161,16 @@ class _PrinterSelectionScreenState extends State<PrinterSelectionScreen>
                           )
                         : const Icon(Icons.search),
                     label: Text(
-                      state is PrinterScanning ? 'جاري البحث...' : 'بحث عن طابعات',
+                      state is PrinterScanning
+                          ? 'جاري البحث...'
+                          : 'بحث عن طابعات',
                     ),
                   ),
                 ),
               ),
 
               // Printers list
-              Expanded(
-                child: _buildPrintersList(state),
-              ),
+              Expanded(child: _buildPrintersList(state)),
             ],
           );
         },
@@ -223,7 +223,9 @@ class _PrinterSelectionScreenState extends State<PrinterSelectionScreen>
             margin: const EdgeInsets.only(bottom: 12),
             child: ListTile(
               leading: CircleAvatar(
-                backgroundColor: _getConnectionColor(device.type).withOpacity(0.2),
+                backgroundColor: _getConnectionColor(
+                  device.type,
+                ).withOpacity(0.2),
                 child: Icon(
                   _getConnectionIcon(device.type),
                   color: _getConnectionColor(device.type),

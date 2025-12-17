@@ -11,6 +11,7 @@ import 'cubits/auth/auth_cubit.dart';
 import 'cubits/auth/auth_state.dart';
 import 'cubits/cashier/cashier_cubit.dart';
 import 'cubits/printer/printer_cubit.dart';
+import 'cubits/settings/settings_cubit.dart';
 import 'repositories/auth_repository.dart';
 import 'repositories/cashier_repository.dart';
 
@@ -78,6 +79,10 @@ class _SalonAppState extends State<SalonApp> {
           BlocProvider(
             create: (context) =>
                 PrinterCubit()..initialize(), // Auto-reconnect to printer
+          ),
+          BlocProvider(
+            create: (context) =>
+                SettingsCubit()..loadSettings(), // Load app settings on startup
           ),
         ],
         child: MaterialApp(

@@ -28,7 +28,7 @@ class _InvoicePageState extends State<InvoicePage> {
   final _paidController = TextEditingController();
   final _cashierNameController = TextEditingController(text: 'Yousef');
   final _orderNumberController = TextEditingController(
-    text: '${DateTime.now().millisecondsSinceEpoch}',
+    text: 'سيتم إنشاؤه تلقائياً',
   );
   final _branchNameController = TextEditingController(text: 'الفرع الرئيسي');
   String _paymentMethod = 'نقدي';
@@ -196,6 +196,7 @@ class _InvoicePageState extends State<InvoicePage> {
 
       if (invoice != null && mounted) {
         print('✅ Invoice saved with calculated values:');
+        print('  Invoice Number: ${invoice.invoiceNumber}');
         print(
           '  Subtotal Before Tax: ${invoice.subtotalBeforeTax ?? invoice.subtotal}',
         );
@@ -207,6 +208,11 @@ class _InvoicePageState extends State<InvoicePage> {
         print('  Final Total: ${invoice.finalTotal ?? invoice.total}');
         print('  Paid Amount: ${invoice.paidAmount}');
         print('  Remaining Amount: ${invoice.remainingAmount}');
+
+        // Update order number field with invoice number from API
+        setState(() {
+          _orderNumberController.text = invoice.invoiceNumber.toString();
+        });
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -272,6 +278,7 @@ class _InvoicePageState extends State<InvoicePage> {
       }
 
       print('✅ Invoice saved with calculated values:');
+      print('  Invoice Number: ${invoice.invoiceNumber}');
       print(
         '  Subtotal Before Tax: ${invoice.subtotalBeforeTax ?? invoice.subtotal}',
       );
@@ -281,6 +288,11 @@ class _InvoicePageState extends State<InvoicePage> {
       print('  Final Total: ${invoice.finalTotal ?? invoice.total}');
       print('  Paid Amount: ${invoice.paidAmount}');
       print('  Remaining Amount: ${invoice.remainingAmount}');
+
+      // Update order number field with invoice number from API
+      setState(() {
+        _orderNumberController.text = invoice.invoiceNumber.toString();
+      });
 
       // Fetch print data from API
       final printData = await context.read<CashierCubit>().getPrintData(
@@ -421,6 +433,7 @@ class _InvoicePageState extends State<InvoicePage> {
               discountPercentage, // Pass percentage for fallback calculation
           cashierName: cashierName,
           paymentMethod: paymentMethod, // Use API payment method
+          invoiceNumber: orderNumber, // Pass invoice number from API
           // Pass API values for accurate PDF
           apiSubtotal: apiSubtotal,
           apiTaxAmount: apiTaxAmount,
@@ -579,9 +592,10 @@ class _InvoicePageState extends State<InvoicePage> {
             const Divider(height: 24),
             _buildInfoRow(
               theme,
-              "رقم الطلب:",
+              "رقم الفاتورة:",
               null,
               controller: _orderNumberController,
+              isReadOnly: true,
             ),
             _buildInfoRow(
               theme,
@@ -1024,6 +1038,7 @@ class _InvoicePageState extends State<InvoicePage> {
     TextEditingController? controller,
     Widget? dropdown,
     bool isNumeric = false,
+    bool isReadOnly = false,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -1040,13 +1055,19 @@ class _InvoicePageState extends State<InvoicePage> {
                 ? TextFormField(
                     controller: controller,
                     textAlign: TextAlign.right,
+                    readOnly: isReadOnly,
                     keyboardType: isNumeric
                         ? const TextInputType.numberWithOptions(decimal: true)
                         : TextInputType.text,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       isDense: true,
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
+                      filled: isReadOnly,
+                      fillColor: isReadOnly ? Colors.grey.shade100 : null,
                     ),
+                    style: isReadOnly
+                        ? TextStyle(color: Colors.grey.shade600)
+                        : null,
                   )
                 : (dropdown ??
                       Text(value ?? '', style: theme.textTheme.bodyLarge)),
