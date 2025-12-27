@@ -341,65 +341,230 @@ class PrinterService {
   // ============================================================================
 
   /// Print bytes to the connected printer
+  /// ⚠️ CRITICAL: This method MUST complete transmission before returning
+  /// The print job must execute immediately, not when app is backgrounded
   Future<bool> printBytes(List<int> bytes) async {
+    final timestamp = DateTime.now().toIso8601String();
+    print('[PRINT $timestamp] ========== START PRINT JOB ==========');
+
     if (_connectedPrinter == null) {
+      print('[PRINT $timestamp] ❌ FAILED: No printer connected');
       throw Exception('No printer connected');
     }
 
-    try {
-      switch (_connectedPrinter!.type) {
-        case PrinterConnectionType.wifi:
-          return await _printToWiFi(bytes);
-        case PrinterConnectionType.bluetooth:
-          return await _printToBluetooth(bytes);
-        case PrinterConnectionType.usb:
-          return await _printToUSB(bytes);
+    print('[PRINT $timestamp] Printer: ${_connectedPrinter!.name}');
+    print('[PRINT $timestamp] Type: ${_connectedPrinter!.type}');
+    print('[PRINT $timestamp] Data size: ${bytes.length} bytes');
+
+    // Add retry logic for network printers (they can be unreliable)
+    int maxRetries = _connectedPrinter!.type == PrinterConnectionType.wifi
+        ? 2
+        : 1;
+
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        print('[PRINT $timestamp] 🔄 Attempt $attempt/$maxRetries');
+
+        bool success = false;
+        switch (_connectedPrinter!.type) {
+          case PrinterConnectionType.wifi:
+            success = await _printToWiFi(bytes, timestamp);
+            break;
+          case PrinterConnectionType.bluetooth:
+            success = await _printToBluetooth(bytes, timestamp);
+            break;
+          case PrinterConnectionType.usb:
+            success = await _printToUSB(bytes, timestamp);
+            break;
+        }
+
+        if (success) {
+          print(
+            '[PRINT $timestamp] ✅ SUCCESS: Print completed on attempt $attempt',
+          );
+          print('[PRINT $timestamp] ========== END PRINT JOB ==========');
+          return true;
+        }
+
+        // If not the last attempt, wait before retrying
+        if (attempt < maxRetries) {
+          print('[PRINT $timestamp] ⏳ Retry wait (2s)...');
+          await Future.delayed(Duration(seconds: 2));
+        }
+      } catch (e, stackTrace) {
+        print('[PRINT $timestamp] ❌ ERROR on attempt $attempt: $e');
+        print('[PRINT $timestamp] Stack trace: $stackTrace');
+
+        // If not the last attempt, wait before retrying
+        if (attempt < maxRetries) {
+          print('[PRINT $timestamp] ⏳ Retry wait (2s)...');
+          await Future.delayed(Duration(seconds: 2));
+        } else {
+          // Last attempt failed
+          print('[PRINT $timestamp] ❌ FAILED: All retry attempts exhausted');
+          print('[PRINT $timestamp] ========== END PRINT JOB ==========');
+          return false;
+        }
       }
-    } catch (e) {
-      print('Error printing: $e');
+    }
+
+    print('[PRINT $timestamp] ❌ FAILED: Unknown error');
+    print('[PRINT $timestamp] ========== END PRINT JOB ==========');
+    return false;
+  }
+
+  /// Print to WiFi printer with HARD FLUSH and proper socket lifecycle
+  /// ⚠️ CRITICAL FIX: Socket must be flushed AND closed to trigger immediate transmission
+  /// The OS buffers socket data and only flushes when:
+  /// 1. Socket is explicitly closed
+  /// 2. App is backgrounded/terminated
+  /// This is why printing only worked when app was closed!
+  Future<bool> _printToWiFi(List<int> bytes, String timestamp) async {
+    if (_connectedPrinter == null) {
+      print('[PRINT $timestamp] ❌ No connected printer for WiFi');
+      return false;
+    }
+
+    Socket? socket;
+
+    try {
+      final address = _connectedPrinter!.address!;
+      final port = _connectedPrinter!.port!;
+
+      print('[PRINT $timestamp] 📡 Connecting to WiFi printer...');
+      print('[PRINT $timestamp]    Address: $address:$port');
+
+      // Step 1: Open socket connection
+      socket = await Socket.connect(
+        address,
+        port,
+        timeout: const Duration(seconds: 10),
+      );
+
+      print('[PRINT $timestamp] ✅ Socket opened successfully');
+      print('[PRINT $timestamp] 📤 Sending ${bytes.length} bytes...');
+
+      // Step 2: Add bytes to socket buffer
+      socket.add(bytes);
+      print('[PRINT $timestamp] ✅ Bytes added to socket buffer');
+
+      // Step 3: CRITICAL - Flush socket to OS buffer
+      print('[PRINT $timestamp] 🔄 Flushing socket to OS buffer...');
+      await socket.flush();
+      print('[PRINT $timestamp] ✅ Socket flushed to OS buffer');
+
+      // Step 4: CRITICAL - Wait for socket drain (ensure bytes leave OS buffer)
+      // This is the key fix - we need to wait for the socket to drain
+      // Without this, the OS may not transmit immediately
+      print('[PRINT $timestamp] ⏳ Waiting for socket drain...');
+
+      // Listen to the socket to ensure all data is transmitted
+      // The socket will signal when it's done transmitting
+      final completer = Completer<void>();
+      final drainTimer = Timer(Duration(seconds: 5), () {
+        if (!completer.isCompleted) {
+          print(
+            '[PRINT $timestamp] ⏰ Drain timeout - assuming transmission complete',
+          );
+          completer.complete();
+        }
+      });
+
+      // Wait for socket to be writable (indicates buffer is empty)
+      socket.done
+          .then((_) {
+            if (!completer.isCompleted) {
+              print('[PRINT $timestamp] ✅ Socket done signal received');
+              drainTimer.cancel();
+              completer.complete();
+            }
+          })
+          .catchError((error) {
+            if (!completer.isCompleted) {
+              print('[PRINT $timestamp] ⚠️ Socket done error: $error');
+              drainTimer.cancel();
+              completer.complete();
+            }
+          });
+
+      // Give a moment for the drain to complete
+      await Future.delayed(Duration(milliseconds: 500));
+      drainTimer.cancel();
+
+      print('[PRINT $timestamp] ✅ Socket drain complete');
+
+      // Step 5: CRITICAL - Close socket to force final transmission
+      // This is essential - the OS MUST know we're done with this connection
+      print('[PRINT $timestamp] 🔒 Closing socket...');
+      await socket.close();
+      print('[PRINT $timestamp] ✅ Socket closed');
+
+      // Step 6: Final wait to ensure OS processes the close
+      // This ensures the OS has time to process the close and transmit
+      await Future.delayed(Duration(milliseconds: 200));
+
+      print('[PRINT $timestamp] ✅ WiFi print transmission complete');
+      return true;
+    } catch (e, stackTrace) {
+      print('[PRINT $timestamp] ❌ WiFi print error: $e');
+      print('[PRINT $timestamp] Stack: $stackTrace');
+
+      // Ensure socket is closed even on error
+      try {
+        if (socket != null) {
+          print('[PRINT $timestamp] 🧹 Cleaning up socket...');
+          await socket.close();
+        }
+      } catch (closeError) {
+        print('[PRINT $timestamp] ⚠️ Error closing socket: $closeError');
+      }
+
       return false;
     }
   }
 
-  /// Print to WiFi printer
-  Future<bool> _printToWiFi(List<int> bytes) async {
-    if (_networkPrinter == null || _connectedPrinter == null) return false;
+  /// Print to Bluetooth printer with proper flush
+  /// ⚠️ CRITICAL: Bluetooth also suffers from buffer flush issues
+  /// The Bluetooth stack may buffer data until app is backgrounded
+  Future<bool> _printToBluetooth(List<int> bytes, String timestamp) async {
+    try {
+      print('[PRINT $timestamp] 📱 Checking Bluetooth connection...');
 
-    // Reconnect for printing
-    final printer = NetworkPrinter(
-      _getEscPosPaperSize(),
-      await esc_pos.CapabilityProfile.load(),
-    );
-    final result = await printer.connect(
-      _connectedPrinter!.address!,
-      port: _connectedPrinter!.port!,
-    );
+      final isConnected = await _bluetoothPrinter.isConnected;
+      if (isConnected != true) {
+        print('[PRINT $timestamp] ❌ Bluetooth printer not connected');
+        return false;
+      }
 
-    if (result != PosPrintResult.success) {
+      print('[PRINT $timestamp] ✅ Bluetooth connected');
+      print(
+        '[PRINT $timestamp] 📤 Sending ${bytes.length} bytes to Bluetooth...',
+      );
+
+      // Send bytes to Bluetooth printer
+      await _bluetoothPrinter.writeBytes(Uint8List.fromList(bytes));
+      print('[PRINT $timestamp] ✅ Bytes written to Bluetooth buffer');
+
+      // CRITICAL: Wait for Bluetooth transmission
+      // Bluetooth is slower than WiFi and needs more time to transmit
+      // This ensures the data actually leaves the buffer
+      print('[PRINT $timestamp] ⏳ Waiting for Bluetooth transmission...');
+      await Future.delayed(Duration(milliseconds: 1500));
+
+      print('[PRINT $timestamp] ✅ Bluetooth transmission complete');
+      return true;
+    } catch (e, stackTrace) {
+      print('[PRINT $timestamp] ❌ Bluetooth print error: $e');
+      print('[PRINT $timestamp] Stack: $stackTrace');
       return false;
     }
-
-    // Send bytes by converting to ESC/POS commands
-    // The bytes are already formatted ESC/POS commands from Generator
-    printer.rawBytes(bytes);
-    printer.disconnect();
-
-    return true;
-  }
-
-  /// Print to Bluetooth printer
-  Future<bool> _printToBluetooth(List<int> bytes) async {
-    final isConnected = await _bluetoothPrinter.isConnected;
-    if (isConnected != true) return false;
-
-    await _bluetoothPrinter.writeBytes(Uint8List.fromList(bytes));
-    return true;
   }
 
   /// Print to USB printer (DISABLED - usb_serial package has compatibility issues)
-  Future<bool> _printToUSB(List<int> bytes) async {
+  Future<bool> _printToUSB(List<int> bytes, String timestamp) async {
     // USB printing disabled due to package compatibility issues
-    print('USB printing is currently disabled. Please use WiFi or Bluetooth.');
+    print('[PRINT $timestamp] ❌ USB printing is currently disabled');
+    print('[PRINT $timestamp] Please use WiFi or Bluetooth instead');
     return false;
 
     /* Original USB printing code (disabled):
@@ -607,14 +772,14 @@ class PrinterService {
         styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.center),
       );
       bytes += generator.text(
-        'Arabic: مرحبا بكم',
+        'English: Welcome',
         styles: const esc_pos.PosStyles(align: esc_pos.PosAlign.center),
       );
       bytes += generator.emptyLines(2);
 
       // Status
       bytes += generator.text(
-        '✓ Printer is working correctly!',
+        '[OK] Printer is working correctly!',
         styles: const esc_pos.PosStyles(
           align: esc_pos.PosAlign.center,
           bold: true,

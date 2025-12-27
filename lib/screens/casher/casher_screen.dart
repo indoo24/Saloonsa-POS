@@ -12,6 +12,7 @@ import 'printer_settings_screen.dart';
 import '../settings/settings_screen.dart';
 import '../../cubits/cashier/cashier_cubit.dart';
 import '../../cubits/cashier/cashier_state.dart';
+import 'shimmer_loading_widgets.dart';
 
 class CashierScreen extends StatefulWidget {
   final VoidCallback onToggleTheme;
@@ -192,11 +193,11 @@ class _CashierScreenState extends State<CashierScreen> {
       },
       // Build UI based on state
       builder: (context, state) {
-        // Show loading indicator
+        // Show loading indicator with shimmer
         if (state is CashierLoading || state is CashierInitial) {
           return Scaffold(
-            appBar: AppBar(title: Text("الكاشير")),
-            body: const Center(child: CircularProgressIndicator()),
+            appBar: AppBar(title: const Text("الكاشير")),
+            body: CashierScreenShimmer(crossAxisCount: crossAxisCount),
           );
         }
 

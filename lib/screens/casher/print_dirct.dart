@@ -2,6 +2,51 @@ import 'models/customer.dart';
 import 'models/service-model.dart';
 import 'services/printer_service.dart';
 import 'receipt_generator.dart';
+import '../../models/invoice_data.dart';
+
+/// Generate ESC/POS bytes from InvoiceData (matches PDF format exactly)
+/// This is the preferred method that ensures thermal receipt matches PDF preview
+Future<List<int>> generateInvoiceBytesFromData({
+  required InvoiceData data,
+}) async {
+  print('📄 Generating invoice bytes from InvoiceData (matches PDF)');
+  final receiptGenerator = ReceiptGenerator();
+  return await receiptGenerator.generateReceiptBytesFromInvoiceData(data: data);
+}
+
+/// Print invoice from InvoiceData to connected printer
+/// Uses the same format as PDF preview for consistency
+Future<bool> printInvoiceDirectFromData({
+  required InvoiceData data,
+}) async {
+  try {
+    print('🖨️ === START printInvoiceDirectFromData === Time: ${DateTime.now()}');
+    print('🖨️ Printing invoice from InvoiceData (matches PDF format)');
+    
+    // Generate invoice bytes using the new method
+    print('📝 Generating bytes... Time: ${DateTime.now()}');
+    final bytes = await generateInvoiceBytesFromData(data: data);
+    print('📝 Bytes generated (${bytes.length} bytes). Time: ${DateTime.now()}');
+
+    // Get printer service and send data
+    final printerService = PrinterService();
+    print('🔌 Sending to printer... Time: ${DateTime.now()}');
+    final result = await printerService.printBytes(bytes);
+    print('🔌 Printer response received. Time: ${DateTime.now()}');
+
+    if (result) {
+      print('✅ Invoice printed successfully. Time: ${DateTime.now()}');
+    } else {
+      print('❌ Failed to print invoice. Time: ${DateTime.now()}');
+    }
+
+    print('🖨️ === END printInvoiceDirectFromData === Time: ${DateTime.now()}');
+    return result;
+  } catch (e) {
+    print('❌ Error printing invoice: $e. Time: ${DateTime.now()}');
+    return false;
+  }
+}
 
 /// Generate ESC/POS bytes for invoice printing with enhanced format
 /// This function creates the invoice format matching the reference image

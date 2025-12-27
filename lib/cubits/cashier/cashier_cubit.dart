@@ -420,6 +420,12 @@ class CashierCubit extends Cubit<CashierState> {
         data: {'orderId': orderId},
       );
       final printData = await repository.getPrintData(orderId);
+      
+      // DEBUG: Log the entire API response to identify payment method field
+      print('🔍 === RAW API RESPONSE FROM getPrintData ===');
+      print(printData);
+      print('🔍 === END RAW API RESPONSE ===');
+      
       return printData;
     } catch (e, stackTrace) {
       LoggerService.error(

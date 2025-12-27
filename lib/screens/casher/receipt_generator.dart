@@ -1,11 +1,14 @@
 import 'dart:typed_data';
+import 'dart:convert';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:intl/intl.dart';
+import 'package:charset_converter/charset_converter.dart';
 import 'models/customer.dart';
 import 'models/service-model.dart';
 import '../../models/app_settings.dart';
+import '../../models/invoice_data.dart';
 import '../../services/settings_service.dart';
 
 /// Enhanced receipt generator that matches the reference image exactly
@@ -21,6 +24,277 @@ import '../../services/settings_service.dart';
 class ReceiptGenerator {
   static const int PAPER_WIDTH = 48; // 80mm paper = ~48 characters
   final SettingsService _settingsService = SettingsService();
+
+  /// Helper method to safely add text with Arabic support
+  /// Uses raw bytes encoding for Arabic characters
+  Future<void> _addText(
+    List<int> bytes,
+    String text, {
+    PosAlign align = PosAlign.left,
+    bool bold = false,
+    PosTextSize height = PosTextSize.size1,
+    PosTextSize width = PosTextSize.size1,
+  }) async {
+    // Check if text contains Arabic characters
+    final hasArabic = RegExp(r'[\u0600-\u06FF]').hasMatch(text);
+
+    if (hasArabic) {
+      try {
+        // Encode to Windows-1256 for Arabic support
+        final encoded = await CharsetConverter.encode('Windows-1256', text);
+
+        // Add ESC/POS formatting commands
+        if (bold) bytes.addAll([0x1B, 0x45, 0x01]); // Bold ON
+        if (height == PosTextSize.size2 || width == PosTextSize.size2) {
+          bytes.addAll([0x1D, 0x21, 0x11]); // Double size
+        }
+        if (align == PosAlign.center)
+          bytes.addAll([0x1B, 0x61, 0x01]); // Center align
+        if (align == PosAlign.right)
+          bytes.addAll([0x1B, 0x61, 0x02]); // Right align
+
+        // Add encoded text
+        bytes.addAll(encoded);
+        bytes.addAll([0x0A]); // Line feed
+
+        // Reset formatting
+        if (bold) bytes.addAll([0x1B, 0x45, 0x00]); // Bold OFF
+        if (height == PosTextSize.size2 || width == PosTextSize.size2) {
+          bytes.addAll([0x1D, 0x21, 0x00]); // Normal size
+        }
+        if (align != PosAlign.left)
+          bytes.addAll([0x1B, 0x61, 0x00]); // Left align
+      } catch (e) {
+        print('Error encoding Arabic text: $e');
+        // Fallback: add text as UTF-8
+        bytes.addAll(utf8.encode(text));
+        bytes.addAll([0x0A]);
+      }
+    } else {
+      // English text - safe to use directly
+      if (bold) bytes.addAll([0x1B, 0x45, 0x01]);
+      if (height == PosTextSize.size2 || width == PosTextSize.size2) {
+        bytes.addAll([0x1D, 0x21, 0x11]);
+      }
+      if (align == PosAlign.center) bytes.addAll([0x1B, 0x61, 0x01]);
+      if (align == PosAlign.right) bytes.addAll([0x1B, 0x61, 0x02]);
+
+      bytes.addAll(text.codeUnits);
+      bytes.addAll([0x0A]);
+
+      if (bold) bytes.addAll([0x1B, 0x45, 0x00]);
+      if (height == PosTextSize.size2 || width == PosTextSize.size2) {
+        bytes.addAll([0x1D, 0x21, 0x00]);
+      }
+      if (align != PosAlign.left) bytes.addAll([0x1B, 0x61, 0x00]);
+    }
+  }
+
+  /// Generate receipt bytes from InvoiceData (matches PDF format exactly)
+  /// This is the preferred method that ensures thermal receipt matches PDF preview
+  Future<List<int>> generateReceiptBytesFromInvoiceData({
+    required InvoiceData data,
+  }) async {
+    print('📄 Generating thermal receipt from InvoiceData (matches PDF format)');
+    
+    final profile = await CapabilityProfile.load();
+    final generator = Generator(PaperSize.mm80, profile);
+    List<int> bytes = [];
+
+    try {
+      // Initialize printer
+      bytes.addAll([0x1B, 0x40]); // ESC @ - Initialize printer
+      bytes.addAll(generator.reset());
+
+      // 1. LOGO (if available)
+      if (data.logoPath != null && data.logoPath!.startsWith('assets/')) {
+        try {
+          final ByteData logoData = await rootBundle.load(data.logoPath!);
+          final Uint8List logoBytes = logoData.buffer.asUint8List();
+          final img.Image? image = img.decodeImage(logoBytes);
+          if (image != null) {
+            // Resize and center logo
+            final resized = img.copyResize(image, width: 200);
+            bytes.addAll(generator.imageRaster(resized, align: PosAlign.center));
+            await _addText(bytes, '', align: PosAlign.center); // Spacing
+          }
+        } catch (e) {
+          print('⚠️ Could not load logo: $e');
+        }
+      }
+
+      // 2. BUSINESS INFO - Centered
+      await _addText(
+        bytes,
+        data.businessName,
+        align: PosAlign.center,
+        bold: true,
+        height: PosTextSize.size2,
+        width: PosTextSize.size2,
+      );
+      
+      await _addText(bytes, data.businessAddress, align: PosAlign.center);
+      await _addText(bytes, data.businessPhone, align: PosAlign.center);
+      
+      if (data.taxNumber != null && data.taxNumber!.isNotEmpty) {
+        await _addText(
+          bytes,
+          'الرقم الضريبي: ${data.taxNumber}',
+          align: PosAlign.center,
+        );
+      }
+      
+      await _addText(bytes, '', align: PosAlign.center); // Spacing
+
+      // 3. TITLE - "فاتورة ضريبية مبسطة"
+      await _addText(bytes, '━━━━━━━━━━━━━━━━━━━━━━━━', align: PosAlign.center);
+      await _addText(
+        bytes,
+        'فاتورة ضريبية مبسطة',
+        align: PosAlign.center,
+        bold: true,
+        height: PosTextSize.size2,
+      );
+      await _addText(bytes, '━━━━━━━━━━━━━━━━━━━━━━━━', align: PosAlign.center);
+      await _addText(bytes, '', align: PosAlign.center); // Spacing
+
+      // 4. ORDER INFO TABLE
+      final dateFormat = DateFormat('yyyy-MM-dd', 'ar');
+      final timeFormat = DateFormat('HH:mm', 'ar');
+      
+      await _addText(bytes, '┌────────────────────────────────┐');
+      await _addText(bytes, '│ رقم الفاتورة: ${_padArabic(data.orderNumber, 16)}│');
+      await _addText(bytes, '│ العميل: ${_padArabic(data.customerName ?? 'عميل كاش', 20)}│');
+      await _addText(bytes, '│ التاريخ: ${_padArabic(dateFormat.format(data.dateTime), 20)}│');
+      await _addText(bytes, '│ الوقت: ${_padArabic(timeFormat.format(data.dateTime), 22)}│');
+      await _addText(bytes, '│ الكاشير: ${_padArabic(data.cashierName, 20)}│');
+      await _addText(bytes, '│ الفرع: ${_padArabic(data.branchName, 22)}│');
+      await _addText(bytes, '└────────────────────────────────┘');
+      await _addText(bytes, '', align: PosAlign.center); // Spacing
+
+      // 5. ITEMS HEADER
+      await _addText(bytes, '┌────────────────────────────────┐');
+      await _addText(
+        bytes,
+        '│         تفاصيل الخدمات          │',
+        align: PosAlign.center,
+        bold: true,
+      );
+      await _addText(bytes, '├────────────────────────────────┤');
+
+      // 6. ITEMS TABLE
+      for (final item in data.items) {
+        String itemName = item.name;
+        if (item.employeeName != null) {
+          itemName += ' (${item.employeeName})';
+        }
+        
+        await _addText(bytes, '│ $itemName');
+        
+        final priceStr = '${item.price.toStringAsFixed(2)} ر.س';
+        final qtyStr = 'الكمية: ${item.quantity}';
+        final totalStr = 'المجموع: ${item.total.toStringAsFixed(2)} ر.س';
+        
+        await _addText(bytes, '│   $priceStr × $qtyStr');
+        await _addText(bytes, '│   $totalStr');
+        await _addText(bytes, '├────────────────────────────────┤');
+      }
+
+      // 7. TOTALS SECTION
+      await _addText(bytes, '│');
+      await _addText(
+        bytes,
+        '│ المجموع الفرعي: ${data.subtotalBeforeTax.toStringAsFixed(2)} ر.س',
+        align: PosAlign.right,
+      );
+      
+      if (data.hasDiscount) {
+        await _addText(
+          bytes,
+          '│ الخصم (${data.discountPercentage.toStringAsFixed(0)}%): -${data.discountAmount.toStringAsFixed(2)} ر.س',
+          align: PosAlign.right,
+        );
+        await _addText(
+          bytes,
+          '│ بعد الخصم: ${data.amountAfterDiscount.toStringAsFixed(2)} ر.س',
+          align: PosAlign.right,
+        );
+      }
+      
+      await _addText(
+        bytes,
+        '│ ضريبة (${data.taxRate.toStringAsFixed(0)}%): ${data.taxAmount.toStringAsFixed(2)} ر.س',
+        align: PosAlign.right,
+      );
+      await _addText(bytes, '├────────────────────────────────┤');
+      await _addText(
+        bytes,
+        '│ الإجمالي: ${data.grandTotal.toStringAsFixed(2)} ر.س',
+        align: PosAlign.right,
+        bold: true,
+        height: PosTextSize.size2,
+      );
+      
+      if (data.hasPaymentInfo) {
+        await _addText(bytes, '├────────────────────────────────┤');
+        await _addText(bytes, '│ طريقة الدفع: ${data.paymentMethod}', align: PosAlign.right);
+        
+        if (data.paidAmount != null) {
+          await _addText(
+            bytes,
+            '│ المدفوع: ${data.paidAmount!.toStringAsFixed(2)} ر.س',
+            align: PosAlign.right,
+          );
+        }
+        
+        if (data.hasRemaining) {
+          final label = data.remainingAmount! > 0 ? 'المتبقي' : 'المرتجع';
+          await _addText(
+            bytes,
+            '│ $label: ${data.remainingAmount!.abs().toStringAsFixed(2)} ر.س',
+            align: PosAlign.right,
+          );
+        }
+      }
+      
+      await _addText(bytes, '└────────────────────────────────┘');
+      await _addText(bytes, '', align: PosAlign.center); // Spacing
+
+      // 8. THANK YOU MESSAGE
+      if (data.invoiceNotes != null && data.invoiceNotes!.isNotEmpty) {
+        await _addText(bytes, '┌────────────────────────────────┐');
+        await _addText(
+          bytes,
+          data.invoiceNotes!,
+          align: PosAlign.center,
+        );
+        await _addText(bytes, '└────────────────────────────────┘');
+        await _addText(bytes, '', align: PosAlign.center); // Spacing
+      }
+
+      // 9. QR CODE
+      bytes.addAll(generator.qrcode(
+        'Invoice: ${data.orderNumber}, Total: ${data.grandTotal.toStringAsFixed(2)} SAR',
+        align: PosAlign.center,
+      ));
+
+      // Feed and cut
+      bytes.addAll(generator.feed(2));
+      bytes.addAll(generator.cut());
+
+      print('✅ Thermal receipt generated successfully (${bytes.length} bytes)');
+      return bytes;
+    } catch (e) {
+      print('❌ Error generating thermal receipt: $e');
+      rethrow;
+    }
+  }
+
+  /// Helper to pad Arabic text for table alignment
+  String _padArabic(String text, int width) {
+    if (text.length >= width) return text.substring(0, width);
+    return text + ' ' * (width - text.length);
+  }
 
   /// Generate image-based receipt bytes that match the reference exactly
   /// Now accepts optional tax and discount amounts from API
@@ -45,6 +319,8 @@ class ReceiptGenerator {
     final settings = await _settingsService.loadSettings();
 
     final profile = await CapabilityProfile.load();
+    // Always use 80mm for thermal printing (ESC/POS doesn't support A4)
+    // A4 printing should use PDF generation instead
     final generator = Generator(PaperSize.mm80, profile);
     List<int> bytes = [];
 
@@ -85,14 +361,18 @@ class ReceiptGenerator {
     print('  6. Grand Total: $grandTotal');
 
     try {
+      // Initialize printer with ESC/POS commands
+      bytes.addAll([0x1B, 0x40]); // ESC @ - Initialize printer
+      bytes.addAll(generator.reset());
+      
       // 1. HEADER SECTION - Logo + Store Info (use settings)
       await _addHeader(generator, bytes, settings);
 
-      // 2. TITLE - "فاتورة ضريبية مبسطة"
-      _addTitle(generator, bytes);
+      // 2. TITLE - "فاتورة ضريبية"
+      await _addTitle(generator, bytes);
 
       // 3. ORDER INFO TABLE (with borders)
-      _addOrderInfoTable(
+      await _addOrderInfoTable(
         generator,
         bytes,
         orderNumber: orderNumber,
@@ -102,10 +382,10 @@ class ReceiptGenerator {
       );
 
       // 4. ITEMS TABLE (with borders)
-      _addItemsTable(generator, bytes, services: services);
+      await _addItemsTable(generator, bytes, services: services);
 
       // 5. TOTALS SECTION - use calculated/API values
-      _addTotalsSection(
+      await _addTotalsSection(
         generator,
         bytes,
         subtotal: subtotal,
@@ -118,14 +398,14 @@ class ReceiptGenerator {
       );
 
       // 6. FOOTER - Thank you message (use settings)
-      _addFooter(generator, bytes, settings);
+      await _addFooter(generator, bytes, settings);
 
       // 7. QR CODE
-      _addQRCode(generator, bytes, grandTotal);
+      await _addQRCode(generator, bytes, grandTotal);
 
       // Feed and cut
-      bytes += generator.feed(2);
-      bytes += generator.cut();
+      bytes.addAll(generator.feed(2));
+      bytes.addAll(generator.cut());
     } catch (e) {
       print('Error generating receipt: $e');
       // Fallback to simple receipt
@@ -158,8 +438,10 @@ class ReceiptGenerator {
       if (image != null) {
         // Resize logo to fit receipt width (max 380 pixels for 80mm)
         final resizedImage = img.copyResize(image, width: 380);
-        bytes += generator.imageRaster(resizedImage, align: PosAlign.center);
-        bytes += generator.feed(1);
+        bytes.addAll(
+          generator.imageRaster(resizedImage, align: PosAlign.center),
+        );
+        bytes.addAll(generator.feed(1));
       }
     } catch (e) {
       print('Could not load logo: $e');
@@ -167,103 +449,97 @@ class ReceiptGenerator {
     }
 
     // Store name - FROM SETTINGS
-    bytes += generator.text(
+    await _addText(
+      bytes,
       settings.businessName,
-      styles: const PosStyles(
-        align: PosAlign.center,
-        bold: true,
-        height: PosTextSize.size2,
-        width: PosTextSize.size2,
-      ),
+      align: PosAlign.center,
+      bold: true,
+      height: PosTextSize.size2,
+      width: PosTextSize.size2,
     );
 
     // Address - FROM SETTINGS
-    bytes += generator.text(
-      settings.address,
-      styles: const PosStyles(
-        align: PosAlign.center,
-        height: PosTextSize.size1,
-      ),
-    );
+    await _addText(bytes, settings.address, align: PosAlign.center);
 
     // Phone - FROM SETTINGS
-    bytes += generator.text(
-      'هاتف: ${settings.phoneNumber}',
-      styles: const PosStyles(align: PosAlign.center),
+    await _addText(
+      bytes,
+      'Tel: ${settings.phoneNumber}',
+      align: PosAlign.center,
     );
 
     // Tax Number - FROM SETTINGS (if provided)
     if (settings.taxNumber.isNotEmpty) {
-      bytes += generator.text(
-        'الرقم الضريبي: ${settings.taxNumber}',
-        styles: const PosStyles(align: PosAlign.center),
+      await _addText(
+        bytes,
+        'Tax ID: ${settings.taxNumber}',
+        align: PosAlign.center,
       );
     }
 
-    bytes += generator.feed(1);
-    bytes += generator.hr(ch: '═', len: PAPER_WIDTH);
-    bytes += generator.feed(1);
+    bytes.addAll(generator.feed(1));
+    bytes.addAll(generator.hr(ch: '═', len: PAPER_WIDTH));
+    bytes.addAll(generator.feed(1));
   }
 
-  /// Add title "فاتورة ضريبية مبسطة"
-  void _addTitle(Generator generator, List<int> bytes) {
-    bytes += generator.text(
-      'فاتورة ضريبية ',
-      styles: const PosStyles(
-        align: PosAlign.center,
-        bold: true,
-        height: PosTextSize.size2,
-        width: PosTextSize.size1,
-      ),
+  /// Add title "فاتورة ضريبية" (Tax Invoice)
+  Future<void> _addTitle(Generator generator, List<int> bytes) async {
+    await _addText(
+      bytes,
+      'فاتورة ضريبية',
+      align: PosAlign.center,
+      bold: true,
+      height: PosTextSize.size2,
+      width: PosTextSize.size1,
     );
-    bytes += generator.feed(1);
-    bytes += generator.hr(ch: '═', len: PAPER_WIDTH);
+    bytes.addAll(generator.feed(1));
+    bytes.addAll(generator.hr(ch: '═', len: PAPER_WIDTH));
   }
 
   /// Add order information table with borders (RTL layout)
-  void _addOrderInfoTable(
+  Future<void> _addOrderInfoTable(
     Generator generator,
     List<int> bytes, {
     required String orderNumber,
     required Customer? customer,
     required String cashierName,
     required String branchName,
-  }) {
-    bytes += generator.feed(1);
+  }) async {
+    bytes.addAll(generator.feed(1));
 
     final dateNow = DateFormat('yyyy-MM-dd HH:mm', 'ar').format(DateTime.now());
-    final customerName = customer?.name ?? 'عميل كاش';
+    final customerName = customer?.name ?? 'عميل كاش'; // Arabic: Cash Customer
 
     // Table border top
-    bytes += generator.text('┌' + '─' * (PAPER_WIDTH - 2) + '┐');
+    bytes.addAll(generator.text('┌' + '─' * (PAPER_WIDTH - 2) + '┐'));
 
-    // Order number
-    _addTableRow(generator, bytes, 'رقم الطلب', orderNumber);
+    // Order number - Arabic label
+    await _addTableRow(generator, bytes, 'رقم الطلب', orderNumber);
 
-    // Customer
-    _addTableRow(generator, bytes, 'العميل', customerName);
+    // Customer - Arabic label
+    await _addTableRow(generator, bytes, 'العميل', customerName);
 
-    // Date
-    _addTableRow(generator, bytes, 'التاريخ', dateNow);
+    // Date - Arabic label
+    await _addTableRow(generator, bytes, 'التاريخ', dateNow);
 
-    // Cashier
-    _addTableRow(generator, bytes, 'الكاشير', cashierName);
+    // Cashier - Arabic label
+    await _addTableRow(generator, bytes, 'الكاشير', cashierName);
 
-    // Branch
-    _addTableRow(generator, bytes, 'الفرع', branchName);
+    // Branch - Arabic label
+    await _addTableRow(generator, bytes, 'الفرع', branchName);
 
     // Table border bottom
-    bytes += generator.text('└' + '─' * (PAPER_WIDTH - 2) + '┘');
-    bytes += generator.feed(1);
+    bytes.addAll(generator.text('└' + '─' * (PAPER_WIDTH - 2) + '┘'));
+    bytes.addAll(generator.feed(1));
   }
 
   /// Add a single table row with label and value
-  void _addTableRow(
+  Future<void> _addTableRow(
     Generator generator,
     List<int> bytes,
     String label,
     String value,
-  ) {
+  ) async {
     // Calculate padding
     final contentLength =
         label.length + value.length + 3; // 3 for separators and spaces
@@ -279,26 +555,28 @@ class ReceiptGenerator {
       row = row.padRight(PAPER_WIDTH);
     }
 
-    bytes += generator.text(row);
+    await _addText(bytes, row);
   }
 
   /// Add items table with borders and columns
-  void _addItemsTable(
+  Future<void> _addItemsTable(
     Generator generator,
     List<int> bytes, {
     required List<ServiceModel> services,
-  }) {
-    bytes += generator.feed(1);
+  }) async {
+    bytes.addAll(generator.feed(1));
 
     // Table header border
-    bytes += generator.text('┌' + '─' * (PAPER_WIDTH - 2) + '┐');
+    bytes.addAll(generator.text('┌' + '─' * (PAPER_WIDTH - 2) + '┐'));
 
-    // Column headers (RTL: Description | Price | Qty | Total)
-    bytes += generator.text(
-      _formatItemRow('الوصف', 'السعر', 'الكمية', 'الإجمالي', bold: true),
+    // Column headers (RTL: وصف | السعر | الكمية | المجموع)
+    await _addText(
+      bytes,
+      _formatItemRow('وصف', 'السعر', 'كمية', 'المجموع', bold: true),
+      bold: true,
     );
 
-    bytes += generator.text('├' + '─' * (PAPER_WIDTH - 2) + '┤');
+    bytes.addAll(generator.text('├' + '─' * (PAPER_WIDTH - 2) + '┤'));
 
     // Items
     for (final service in services) {
@@ -306,14 +584,15 @@ class ReceiptGenerator {
       final quantity = '1';
       final total = service.price.toStringAsFixed(2);
 
-      bytes += generator.text(
+      await _addText(
+        bytes,
         _formatItemRow(service.name, price, quantity, total),
       );
     }
 
     // Table border bottom
-    bytes += generator.text('└' + '─' * (PAPER_WIDTH - 2) + '┘');
-    bytes += generator.feed(1);
+    bytes.addAll(generator.text('└' + '─' * (PAPER_WIDTH - 2) + '┘'));
+    bytes.addAll(generator.feed(1));
   }
 
   /// Format a single item row with proper column widths
@@ -363,7 +642,7 @@ class ReceiptGenerator {
   }
 
   /// Add totals section
-  void _addTotalsSection(
+  Future<void> _addTotalsSection(
     Generator generator,
     List<int> bytes, {
     required double subtotal,
@@ -373,147 +652,167 @@ class ReceiptGenerator {
     double? paid,
     double? remaining,
     String? paymentMethod,
-  }) {
-    bytes += generator.hr(ch: '─', len: PAPER_WIDTH);
-    bytes += generator.feed(1);
+  }) async {
+    bytes.addAll(generator.hr(ch: '─', len: PAPER_WIDTH));
+    bytes.addAll(generator.feed(1));
 
     // Subtotal Before Tax (if non-zero)
     if (subtotal > 0) {
-      bytes += generator.row([
-        PosColumn(
-          text: 'الإجمالي قبل الضريبة:',
-          width: 6,
-          styles: const PosStyles(align: PosAlign.left),
-        ),
-        PosColumn(
-          text: '${subtotal.toStringAsFixed(2)} ر.س',
-          width: 6,
-          styles: const PosStyles(align: PosAlign.right),
-        ),
-      ]);
+      bytes.addAll(
+        generator.row([
+          PosColumn(
+            text: 'المجموع قبل الضريبة:',
+            width: 6,
+            styles: const PosStyles(align: PosAlign.left),
+          ),
+          PosColumn(
+            text: '${subtotal.toStringAsFixed(2)} SAR',
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]),
+      );
     }
 
     // Tax Amount
-    bytes += generator.row([
-      PosColumn(
-        text: 'ضريبة القيمة المضافة:',
-        width: 6,
-        styles: const PosStyles(align: PosAlign.left),
-      ),
-      PosColumn(
-        text: '${taxAmount.toStringAsFixed(2)} ر.س',
-        width: 6,
-        styles: const PosStyles(align: PosAlign.right),
-      ),
-    ]);
+    bytes.addAll(
+      generator.row([
+        PosColumn(
+          text: 'ضريبة القيمة المضافة (15%):',
+          width: 6,
+          styles: const PosStyles(align: PosAlign.left),
+        ),
+        PosColumn(
+          text: '${taxAmount.toStringAsFixed(2)} SAR',
+          width: 6,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]),
+    );
 
     // Discount Amount if any
     if (discount > 0) {
-      bytes += generator.row([
-        PosColumn(
-          text: 'مبلغ الخصم:',
-          width: 6,
-          styles: const PosStyles(align: PosAlign.left),
-        ),
-        PosColumn(
-          text: '-${discount.toStringAsFixed(2)} ر.س',
-          width: 6,
-          styles: const PosStyles(align: PosAlign.right),
-        ),
-      ]);
+      bytes.addAll(
+        generator.row([
+          PosColumn(
+            text: 'الخصم:',
+            width: 6,
+            styles: const PosStyles(align: PosAlign.left),
+          ),
+          PosColumn(
+            text: '-${discount.toStringAsFixed(2)} SAR',
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]),
+      );
     }
 
-    bytes += generator.feed(1);
-    bytes += generator.hr(ch: '═', len: PAPER_WIDTH);
+    bytes.addAll(generator.feed(1));
+    bytes.addAll(generator.hr(ch: '═', len: PAPER_WIDTH));
 
     // Total including tax
-    bytes += generator.row([
-      PosColumn(
-        text: 'الإجمالي شامل الضريبة:',
-        width: 6,
-        styles: const PosStyles(align: PosAlign.left, bold: true),
-      ),
-      PosColumn(
-        text: '${finalTotal.toStringAsFixed(2)} ر.س',
-        width: 6,
-        styles: const PosStyles(
-          align: PosAlign.right,
-          bold: true,
-          height: PosTextSize.size1,
-          width: PosTextSize.size1,
-        ),
-      ),
-    ]);
-
-    bytes += generator.hr(ch: '═', len: PAPER_WIDTH);
-    bytes += generator.feed(1);
-
-    // Payment Method
-    if (paymentMethod != null && paymentMethod.isNotEmpty) {
-      bytes += generator.row([
+    bytes.addAll(
+      generator.row([
         PosColumn(
-          text: 'طريقة الدفع:',
-          width: 6,
-          styles: const PosStyles(align: PosAlign.left),
-        ),
-        PosColumn(
-          text: paymentMethod,
-          width: 6,
-          styles: const PosStyles(align: PosAlign.right),
-        ),
-      ]);
-    }
-
-    // Paid Amount
-    if (paid != null) {
-      bytes += generator.row([
-        PosColumn(
-          text: 'المبلغ المدفوع:',
+          text: 'المجموع الكلي (شامل الضريبة):',
           width: 6,
           styles: const PosStyles(align: PosAlign.left, bold: true),
         ),
         PosColumn(
-          text: '${paid.toStringAsFixed(2)} ر.س',
+          text: '${finalTotal.toStringAsFixed(2)} SAR',
           width: 6,
-          styles: const PosStyles(align: PosAlign.right, bold: true),
+          styles: const PosStyles(
+            align: PosAlign.right,
+            bold: true,
+            height: PosTextSize.size1,
+            width: PosTextSize.size1,
+          ),
         ),
-      ]);
+      ]),
+    );
+
+    bytes.addAll(generator.hr(ch: '═', len: PAPER_WIDTH));
+    bytes.addAll(generator.feed(1));
+
+    // Payment Method
+    if (paymentMethod != null && paymentMethod.isNotEmpty) {
+      bytes.addAll(
+        generator.row([
+          PosColumn(
+            text: 'طريقة الدفع:',
+            width: 6,
+            styles: const PosStyles(align: PosAlign.left),
+          ),
+          PosColumn(
+            text: paymentMethod,
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right),
+          ),
+        ]),
+      );
+    }
+
+    // Paid Amount
+    if (paid != null) {
+      bytes.addAll(
+        generator.row([
+          PosColumn(
+            text: 'المدفوع:',
+            width: 6,
+            styles: const PosStyles(align: PosAlign.left, bold: true),
+          ),
+          PosColumn(
+            text: '${paid.toStringAsFixed(2)} SAR',
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right, bold: true),
+          ),
+        ]),
+      );
     }
 
     // Remaining/Change Amount
     if (remaining != null && remaining != 0) {
       final isChange = remaining < 0;
       final absRemaining = remaining.abs();
-      bytes += generator.row([
-        PosColumn(
-          text: isChange ? 'الباقي (للعميل):' : 'المتبقي:',
-          width: 6,
-          styles: const PosStyles(align: PosAlign.left, bold: true),
-        ),
-        PosColumn(
-          text: '${absRemaining.toStringAsFixed(2)} ر.س',
-          width: 6,
-          styles: const PosStyles(align: PosAlign.right, bold: true),
-        ),
-      ]);
+      bytes.addAll(
+        generator.row([
+          PosColumn(
+            text: isChange ? 'الفكة:' : 'المتبقي:',
+            width: 6,
+            styles: const PosStyles(align: PosAlign.left, bold: true),
+          ),
+          PosColumn(
+            text: '${absRemaining.toStringAsFixed(2)} SAR',
+            width: 6,
+            styles: const PosStyles(align: PosAlign.right, bold: true),
+          ),
+        ]),
+      );
     } else if (paid != null && paid >= finalTotal) {
-      // If paid equals or exceeds total, show "مدفوع بالكامل"
-      bytes += generator.row([
-        PosColumn(
-          text: '✓ مدفوع بالكامل',
-          width: 12,
-          styles: const PosStyles(align: PosAlign.center, bold: true),
-        ),
-      ]);
+      // If paid equals or exceeds total, show "Paid in Full"
+      bytes.addAll(
+        generator.row([
+          PosColumn(
+            text: '[OK] تم الدفع بالكامل',
+            width: 12,
+            styles: const PosStyles(align: PosAlign.center, bold: true),
+          ),
+        ]),
+      );
     }
 
-    bytes += generator.feed(1);
-    bytes += generator.hr(ch: '═', len: PAPER_WIDTH);
+    bytes.addAll(generator.feed(1));
+    bytes.addAll(generator.hr(ch: '═', len: PAPER_WIDTH));
   }
 
   /// Add footer with thank you message
-  void _addFooter(Generator generator, List<int> bytes, AppSettings settings) {
-    bytes += generator.feed(1);
+  Future<void> _addFooter(
+    Generator generator,
+    List<int> bytes,
+    AppSettings settings,
+  ) async {
+    bytes.addAll(generator.feed(1));
 
     // Invoice notes from settings
     if (settings.invoiceNotes.isNotEmpty) {
@@ -521,23 +820,29 @@ class ReceiptGenerator {
       final lines = settings.invoiceNotes.split('\n');
       for (var line in lines) {
         if (line.trim().isNotEmpty) {
-          bytes += generator.text(
+          await _addText(
+            bytes,
             line.trim(),
-            styles: const PosStyles(align: PosAlign.center, bold: true),
+            align: PosAlign.center,
+            bold: true,
           );
         }
       }
     }
 
-    bytes += generator.feed(1);
+    bytes.addAll(generator.feed(1));
   }
 
   /// Add QR code centered
-  void _addQRCode(Generator generator, List<int> bytes, double total) {
+  Future<void> _addQRCode(
+    Generator generator,
+    List<int> bytes,
+    double total,
+  ) async {
     try {
       // Generate QR with invoice data
       // TLV format for ZATCA (Saudi Arabia)
-      final sellerName = 'صالون الشباب';
+      final sellerName = 'صالون الشباب'; // Arabic: Salon Al-Shabab
       final vatNumber = '300000000000003'; // Replace with actual VAT number
       final timestamp = DateFormat(
         'yyyy-MM-dd HH:mm:ss',
@@ -552,8 +857,8 @@ class ReceiptGenerator {
           'Total: $totalStr SAR\n'
           'Tax: $taxStr SAR';
 
-      bytes += generator.qrcode(qrData);
-      bytes += generator.feed(1);
+      bytes.addAll(generator.qrcode(qrData));
+      bytes.addAll(generator.feed(1));
     } catch (e) {
       print('Could not generate QR code: $e');
     }
@@ -571,37 +876,36 @@ class ReceiptGenerator {
   ) async {
     List<int> bytes = [];
 
-    bytes += generator.text(
-      'صالون الشباب',
-      styles: const PosStyles(
-        align: PosAlign.center,
-        bold: true,
-        height: PosTextSize.size2,
-      ),
+    await _addText(
+      bytes,
+      'صالون الشباب', // Salon Al-Shabab in Arabic
+      align: PosAlign.center,
+      bold: true,
+      height: PosTextSize.size2,
     );
-    bytes += generator.text(
-      'فاتورة ضريبية ',
-      styles: const PosStyles(align: PosAlign.center, bold: true),
-    );
-    bytes += generator.hr();
-    bytes += generator.text('رقم الطلب: $orderNumber');
-    bytes += generator.text('العميل: ${customer?.name ?? "عميل كاش"}');
-    bytes += generator.text('الكاشير: $cashierName');
-    bytes += generator.hr();
+    await _addText(bytes, 'فاتورة ضريبية', align: PosAlign.center, bold: true);
+    bytes.addAll(generator.hr());
+    await _addText(bytes, 'رقم الطلب: $orderNumber');
+    await _addText(bytes, 'العميل: ${customer?.name ?? "عميل كاش"}');
+    await _addText(bytes, 'الكاشير: $cashierName');
+    bytes.addAll(generator.hr());
 
     for (final service in services) {
-      bytes += generator.text(
-        '${service.name} - ${service.price.toStringAsFixed(2)} ر.س',
+      await _addText(
+        bytes,
+        '${service.name} - ${service.price.toStringAsFixed(2)} SAR',
       );
     }
 
-    bytes += generator.hr();
-    bytes += generator.text(
-      'الإجمالي: ${total.toStringAsFixed(2)} ر.س',
-      styles: const PosStyles(bold: true, align: PosAlign.right),
+    bytes.addAll(generator.hr());
+    await _addText(
+      bytes,
+      'المجموع: ${total.toStringAsFixed(2)} SAR',
+      bold: true,
+      align: PosAlign.right,
     );
-    bytes += generator.feed(2);
-    bytes += generator.cut();
+    bytes.addAll(generator.feed(2));
+    bytes.addAll(generator.cut());
 
     return bytes;
   }

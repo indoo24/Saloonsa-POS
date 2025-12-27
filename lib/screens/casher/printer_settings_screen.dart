@@ -3,9 +3,10 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../cubits/printer/printer_cubit.dart';
 import '../../cubits/printer/printer_state.dart';
 import '../../models/printer_settings.dart';
+import '../../models/invoice_data.dart';
+import '../thermal_receipt_preview_screen.dart';
 import 'models/printer_device.dart';
 import 'package:toastification/toastification.dart';
-import '../receipt/receipt_preview_screen.dart';
 
 /// Professional Printer Settings screen with full configuration options
 class PrinterSettingsScreen extends StatefulWidget {
@@ -87,6 +88,64 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
     }
   }
 
+  void _showReceiptPreview() {
+    // Create sample invoice data for preview
+    final testData = InvoiceData(
+      orderNumber: '104',
+      branchName: 'الفرع الرئيسي',
+      cashierName: 'Yousef',
+      dateTime: DateTime.now(),
+      customerName: 'عميل كاش',
+      customerPhone: null,
+      items: [
+        InvoiceItem(
+          name: 'قص',
+          price: 25.00,
+          quantity: 1,
+          employeeName: 'محمد',
+        ),
+      ],
+      subtotalBeforeTax: 25.00,
+      discountPercentage: 0.0,
+      discountAmount: 0.0,
+      amountAfterDiscount: 25.00,
+      taxRate: 15.0,
+      taxAmount: 3.75,
+      grandTotal: 28.75,
+      paymentMethod: 'نقدي',
+      paidAmount: 28.75,
+      remainingAmount: 0.0,
+      invoiceNotes: null,
+      businessName: 'صالون الشباب',
+      businessAddress: 'الصبخة البحرية',
+      businessPhone: '0566666464',
+      taxNumber: 'TAX123456789',
+      logoPath: 'assets/images/logo.png',
+    );
+
+    // Navigate to preview screen
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ThermalReceiptPreviewScreen(
+          data: testData,
+          paperWidth: _selectedPaperSize == PaperSize.mm58
+              ? PaperWidth.mm58
+              : PaperWidth.mm80,
+          onPrint: () {
+            Navigator.pop(context);
+            toastification.show(
+              context: context,
+              title: const Text('هذا مجرد معاينة - يمكنك طباعة الفواتير الفعلية من شاشة الفاتورة'),
+              type: ToastificationType.info,
+              autoCloseDuration: const Duration(seconds: 3),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -139,11 +198,6 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
               children: [
                 // Paper Size Section
                 _buildPaperSizeSection(theme),
-
-                const Divider(height: 1),
-
-                // Receipt Preview Button (Developer Tool)
-                _buildReceiptPreviewButton(theme),
 
                 const Divider(height: 1),
 
@@ -279,6 +333,24 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Preview Button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _showReceiptPreview,
+              icon: const Icon(Icons.visibility),
+              label: const Text('معاينة نموذج الفاتورة'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: theme.colorScheme.secondary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
             ),
           ),
         ],
@@ -576,72 +648,6 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildReceiptPreviewButton(ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      child: Card(
-        elevation: 2,
-        color: Colors.blue.shade50,
-        child: InkWell(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const ReceiptPreviewScreen(),
-              ),
-            );
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade100,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.preview,
-                    size: 32,
-                    color: Colors.blue.shade700,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'معاينة الإيصال',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue.shade900,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'أداة مطور: معاينة تطابق الطباعة الحرارية',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: Colors.blue.shade700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.arrow_forward_ios,
-                  color: Colors.blue.shade700,
-                  size: 20,
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }

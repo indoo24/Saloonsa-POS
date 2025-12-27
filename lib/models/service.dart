@@ -1,3 +1,5 @@
+import '../services/api_client.dart';
+
 /// Service/Product model for API integration
 /// Represents a service or product provided by the salon
 class Service {
@@ -88,10 +90,25 @@ class Service {
     for (final field in imageFields) {
       if (json[field] != null && json[field].toString().isNotEmpty) {
         String imageValue = json[field].toString();
+        
         // Convert relative path to full URL if needed
-        if (imageValue.startsWith('/storage/')) {
-          imageValue = 'http://10.0.2.2:8000$imageValue';
+        if (imageValue.startsWith('/storage/') || imageValue.startsWith('storage/')) {
+          // Get the subdomain from API client
+          final apiClient = ApiClient();
+          final subdomain = apiClient.getSubdomain();
+          
+          // Remove leading slash if present
+          final cleanPath = imageValue.startsWith('/') ? imageValue : '/$imageValue';
+          
+          if (subdomain != null && subdomain.isNotEmpty) {
+            // Use subdomain-based URL: https://subdomain.saloonsa.com/storage/...
+            imageValue = 'https://$subdomain.saloonsa.com$cleanPath';
+          } else {
+            // Fallback to default domain
+            imageValue = 'https://saloonsa.com$cleanPath';
+          }
         }
+        // If it's already a full URL, use it as-is
         parsedImage = imageValue;
         break;
       }
