@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../cubits/printer/printer_cubit.dart';
 import '../../cubits/printer/printer_state.dart';
+import '../../services/permission_service.dart';
 import 'models/printer_device.dart';
 import 'package:toastification/toastification.dart';
 
@@ -37,8 +39,62 @@ class _PrinterSelectionScreenState extends State<PrinterSelectionScreen>
     super.dispose();
   }
 
-  void _scanPrinters() {
+  Future<void> _scanPrinters() async {
+    // If scanning Bluetooth, request permissions first
+    if (_selectedType == PrinterConnectionType.bluetooth) {
+      final result = await context.read<PrinterCubit>().requestBluetoothPermissions();
+
+      if (result == PermissionResult.permanentlyDenied) {
+        // Show dialog to open settings
+        if (!mounted) return;
+        _showPermissionDeniedDialog();
+        return;
+      } else if (result == PermissionResult.denied) {
+        // Show error message
+        if (!mounted) return;
+        toastification.show(
+          context: context,
+          title: const Text('يجب منح صلاحيات البلوتوث'),
+          description: const Text('الصلاحيات مطلوبة للبحث عن الطابعات'),
+          type: ToastificationType.warning,
+          autoCloseDuration: const Duration(seconds: 3),
+        );
+        return;
+      }
+    }
+
+    // Proceed with scanning
+    if (!mounted) return;
     context.read<PrinterCubit>().scanPrinters(_selectedType);
+  }
+
+  void _showPermissionDeniedDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('صلاحيات البلوتوث مطلوبة'),
+        content: const Text(
+          'تطبيق الصالون يحتاج صلاحيات البلوتوث للبحث عن الطابعات.\n\n'
+          'الرجاء فتح الإعدادات ومنح الصلاحيات التالية:\n'
+          '• Bluetooth Scan\n'
+          '• Bluetooth Connect\n'
+          '• Location',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              openAppSettings();
+            },
+            child: const Text('فتح الإعدادات'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _connectToPrinter(PrinterDevice device) {
@@ -80,11 +136,49 @@ class _PrinterSelectionScreenState extends State<PrinterSelectionScreen>
               autoCloseDuration: const Duration(seconds: 2),
             );
           } else if (state is PrinterError) {
+            // Show detailed error message
+            // Check if it's a critical error that needs a dialog
+            final message = state.message;
+            final isCriticalError = message.contains('مطلوبة') || 
+                                   message.contains('مغلق') ||
+                                   message.contains('غير مدعوم') ||
+                                   message.contains('يجب') ||
+                                   message.length > 100;
+            
+            if (isCriticalError) {
+              // Show dialog for critical errors with detailed explanation
+              toastification.show(
+                context: context,
+                title: Text(message),
+                type: ToastificationType.error,
+                autoCloseDuration: const Duration(seconds: 5),
+                showProgressBar: true,
+              );
+            } else {
+              // Show toast for simple errors
+              toastification.show(
+                context: context,
+                title: Text(message),
+                type: ToastificationType.error,
+                autoCloseDuration: const Duration(seconds: 3),
+              );
+            }
+          } else if (state is PrintersFound && state.devices.isEmpty) {
+            // Show helpful message when no devices found
+            final typeArabic = state.type == PrinterConnectionType.bluetooth
+                ? 'بلوتوث'
+                : state.type == PrinterConnectionType.wifi
+                    ? 'شبكة'
+                    : 'USB';
+            
             toastification.show(
               context: context,
-              title: Text(state.message),
-              type: ToastificationType.error,
-              autoCloseDuration: const Duration(seconds: 3),
+              title: Text('لم يتم العثور على طابعات $typeArabic'),
+              description: state.type == PrinterConnectionType.bluetooth
+                  ? const Text('تأكد من أن الطابعة مشغلة ومقترنة مع الجهاز')
+                  : const Text('تأكد من أن الطابعة مشغلة ومتصلة بالشبكة'),
+              type: ToastificationType.warning,
+              autoCloseDuration: const Duration(seconds: 4),
             );
           } else if (state is PrinterDisconnected) {
             toastification.show(

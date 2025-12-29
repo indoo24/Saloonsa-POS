@@ -1,16 +1,23 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../screens/casher/models/printer_device.dart';
 import '../../screens/casher/services/printer_service.dart';
+import '../../services/permission_service.dart';
+import '../../services/printer_error_mapper.dart' as error_mapper;
 import '../../models/printer_settings.dart';
 import 'printer_state.dart';
 
 /// Cubit for managing printer operations
 class PrinterCubit extends Cubit<PrinterState> {
   final PrinterService _printerService;
+  final PermissionService _permissionService;
+  final error_mapper.PrinterErrorMapper _errorMapper = error_mapper.PrinterErrorMapper();
 
-  PrinterCubit({PrinterService? printerService})
-    : _printerService = printerService ?? PrinterService(),
-      super(const PrinterInitial());
+  PrinterCubit({
+    PrinterService? printerService,
+    PermissionService? permissionService,
+  })  : _printerService = printerService ?? PrinterService(),
+        _permissionService = permissionService ?? PermissionService(),
+        super(const PrinterInitial());
 
   /// Initialize and auto-reconnect to previously connected printer
   Future<void> initialize() async {
@@ -20,8 +27,20 @@ class PrinterCubit extends Cubit<PrinterState> {
         emit(PrinterConnected(_printerService.connectedPrinter!));
       }
     } catch (e) {
-      emit(PrinterError('Failed to auto-reconnect: $e'));
+      final errorMsg = _getErrorMessage(e);
+      emit(PrinterError(errorMsg));
     }
+  }
+
+  /// Request Bluetooth permissions
+  /// Returns true if permissions are granted
+  Future<PermissionResult> requestBluetoothPermissions() async {
+    return await _permissionService.requestBluetoothPermissions();
+  }
+
+  /// Check if Bluetooth permissions are granted
+  Future<bool> checkBluetoothPermissions() async {
+    return await _permissionService.checkBluetoothPermissions();
   }
 
   /// Scan for printers based on connection type
@@ -36,6 +55,7 @@ class PrinterCubit extends Cubit<PrinterState> {
           devices = await _printerService.scanWiFiPrinters();
           break;
         case PrinterConnectionType.bluetooth:
+          // The service now handles pre-flight checks internally
           devices = await _printerService.scanBluetoothPrinters();
           break;
         case PrinterConnectionType.usb:
@@ -45,7 +65,8 @@ class PrinterCubit extends Cubit<PrinterState> {
 
       emit(PrintersFound(devices, type));
     } catch (e) {
-      emit(PrinterError('Failed to scan printers: $e'));
+      final errorMsg = _getErrorMessage(e);
+      emit(PrinterError(errorMsg));
     }
   }
 
@@ -59,10 +80,11 @@ class PrinterCubit extends Cubit<PrinterState> {
       if (success) {
         emit(PrinterConnected(device));
       } else {
-        emit(const PrinterError('Failed to connect to printer'));
+        emit(const PrinterError('فشل الاتصال بالطابعة'));
       }
     } catch (e) {
-      emit(PrinterError('Connection error: $e'));
+      final errorMsg = _getErrorMessage(e);
+      emit(PrinterError(errorMsg));
     }
   }
 
@@ -150,5 +172,17 @@ class PrinterCubit extends Cubit<PrinterState> {
     } catch (e) {
       emit(PrinterError('Test print error: $e'));
     }
+  }
+
+  /// Map any error to a user-friendly Arabic message
+  String _getErrorMessage(dynamic error) {
+    // If it's already a PrinterError from our error mapper, use its Arabic message
+    if (error is error_mapper.PrinterError) {
+      return error.arabicMessage;
+    }
+
+    // Otherwise, map it
+    final mappedError = _errorMapper.mapError(error);
+    return mappedError.arabicMessage;
   }
 }

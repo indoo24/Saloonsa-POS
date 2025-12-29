@@ -6,9 +6,12 @@ import 'package:esc_pos_printer_plus/esc_pos_printer_plus.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart' as esc_pos;
 import 'package:network_info_plus/network_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:logger/logger.dart';
 // import 'package:usb_serial/usb_serial.dart';  // Disabled due to compatibility issues
 import '../models/printer_device.dart';
 import '../../../models/printer_settings.dart';
+import '../../../services/bluetooth_environment_service.dart';
+import '../../../services/printer_error_mapper.dart';
 import 'dart:convert';
 
 /// Universal printer service supporting WiFi, Bluetooth, and USB
@@ -16,6 +19,10 @@ class PrinterService {
   static final PrinterService _instance = PrinterService._internal();
   factory PrinterService() => _instance;
   PrinterService._internal();
+
+  final Logger _logger = Logger();
+  final BluetoothEnvironmentService _environmentService = BluetoothEnvironmentService();
+  final PrinterErrorMapper _errorMapper = PrinterErrorMapper();
 
   // Bluetooth printer instance
   final BlueThermalPrinter _bluetoothPrinter = BlueThermalPrinter.instance;
@@ -30,6 +37,11 @@ class PrinterService {
 
   // Network printer instance (for WiFi)
   NetworkPrinter? _networkPrinter;
+
+  // Connection retry configuration
+  static const int _maxRetries = 1;
+  static const Duration _retryDelay = Duration(seconds: 2);
+  static const Duration _connectionTimeout = Duration(seconds: 15);
 
   // USB port and transaction (for USB) - Disabled due to compatibility issues
   // UsbPort? _usbPort;
@@ -104,24 +116,73 @@ class PrinterService {
     }
   }
 
-  /// Scan for Bluetooth printers with 10 second timeout
+  /// Scan for Bluetooth printers with comprehensive pre-flight checks
+  /// Throws PrinterError with user-friendly messages on failure
   Future<List<PrinterDevice>> scanBluetoothPrinters() async {
-    final devices = <PrinterDevice>[];
+    _logger.i('📡 Starting Bluetooth printer scan with pre-flight checks...');
 
     try {
-      // Wrap the entire scanning process in a timeout
-      return await Future.any([
-        // The actual scanning logic
+      // STEP 1: Perform pre-flight environment check
+      final envCheck = await _environmentService.performPreFlightCheck();
+      
+      if (!envCheck.isReady) {
+        _logger.w('⚠️ Pre-flight check failed: ${envCheck.missingRequirements}');
+        
+        // Throw the specific error from environment check
+        if (envCheck.error != null) {
+          throw _createPrinterErrorFromEnvError(envCheck.error!);
+        }
+        
+        // Fallback error
+        throw Exception('Environment not ready: ${envCheck.readableMessage}');
+      }
+
+      _logger.i('✅ Pre-flight check passed - Environment is ready');
+
+      // STEP 2: Perform the actual Bluetooth scan with timeout
+      final scannedDevices = await Future.any([
         _performBluetoothScan(),
-        // Timeout after 10 seconds
         Future.delayed(const Duration(seconds: 10), () {
-          print('Bluetooth scan timeout - no printers found within 10 seconds');
+          _logger.w('⏱️ Bluetooth scan timeout - no printers found within 10 seconds');
           return <PrinterDevice>[];
         }),
       ]);
+
+      // STEP 3: Analyze results
+      if (scannedDevices.isEmpty) {
+        _logger.w('⚠️ No Bluetooth devices found');
+        // This is not an error - just no devices nearby
+        return scannedDevices;
+      }
+
+      _logger.i('✅ Bluetooth scan completed successfully. Found ${scannedDevices.length} device(s)');
+      return scannedDevices;
+      
     } catch (e) {
-      print('Error scanning Bluetooth printers: $e');
-      return devices;
+      _logger.e('❌ Bluetooth scan failed: $e');
+      
+      // Map the error to a user-friendly message
+      final printerError = _errorMapper.mapError(e, context: 'Bluetooth scan');
+      _logger.e('🔴 Mapped to: ${printerError.code} - ${printerError.arabicTitle}');
+      
+      // Re-throw the mapped error
+      throw printerError;
+    }
+  }
+
+  /// Convert environment error to printer error
+  PrinterError _createPrinterErrorFromEnvError(BluetoothEnvironmentError envError) {
+    switch (envError.code) {
+      case 'BT_NOT_SUPPORTED':
+        return PrinterError.bluetoothNotSupported();
+      case 'BT_DISABLED':
+        return PrinterError.bluetoothDisabled();
+      case 'LOCATION_DISABLED':
+        return PrinterError.locationDisabled();
+      case 'PERMISSIONS_MISSING':
+        return PrinterError.permissionDenied();
+      default:
+        return PrinterError.unknown(envError.userMessage);
     }
   }
 
@@ -132,37 +193,40 @@ class PrinterService {
     // Check if Bluetooth is available
     final isAvailable = await _bluetoothPrinter.isAvailable;
     if (isAvailable == null || !isAvailable) {
-      print('Bluetooth is not available on this device');
-      return devices;
+      _logger.w('⚠️ Bluetooth is not available on this device');
+      throw Exception('Bluetooth is not available on this device');
     }
 
     // Check if Bluetooth is enabled
     final isOn = await _bluetoothPrinter.isOn;
     if (isOn == null || !isOn) {
-      print('Bluetooth is not enabled. Please turn on Bluetooth');
-      return devices;
+      _logger.w('⚠️ Bluetooth is not enabled. Please turn on Bluetooth');
+      throw Exception('Bluetooth is not enabled. Please turn on Bluetooth');
     }
+
+    _logger.i('🔍 Searching for paired Bluetooth devices...');
 
     // Get bonded (paired) devices
     final bondedDevices = await _bluetoothPrinter.getBondedDevices();
 
     if (bondedDevices.isEmpty) {
-      print('No paired Bluetooth devices found');
+      _logger.w('⚠️ No paired Bluetooth devices found');
       return devices;
     }
 
+    _logger.i('📱 Found ${bondedDevices.length} paired Bluetooth device(s)');
+
     for (var device in bondedDevices) {
-      devices.add(
-        PrinterDevice(
-          id: 'bt_${device.address}',
-          name: device.name ?? 'Unknown Bluetooth Printer',
-          address: device.address,
-          type: PrinterConnectionType.bluetooth,
-        ),
+      final printerDevice = PrinterDevice(
+        id: 'bt_${device.address}',
+        name: device.name ?? 'Unknown Bluetooth Printer',
+        address: device.address,
+        type: PrinterConnectionType.bluetooth,
       );
+      devices.add(printerDevice);
+      _logger.d('  - ${printerDevice.name} (${printerDevice.address})');
     }
 
-    print('Found ${devices.length} paired Bluetooth device(s)');
     return devices;
   }
 
@@ -236,31 +300,121 @@ class PrinterService {
     return false;
   }
 
-  /// Connect to Bluetooth printer
+  /// Connect to Bluetooth printer with comprehensive error handling and retry logic
   Future<bool> _connectToBluetoothPrinter(PrinterDevice device) async {
+    _logger.i('🔌 Attempting to connect to Bluetooth printer: ${device.name}');
+
     if (device.address == null) {
-      return false;
+      _logger.e('❌ Device address is null');
+      throw PrinterError.connectionRefused();
     }
 
-    // Get the Bluetooth device
-    final bondedDevices = await _bluetoothPrinter.getBondedDevices();
-    final btDevice = bondedDevices.firstWhere(
-      (d) => d.address == device.address,
-      orElse: () => throw Exception('Bluetooth device not found'),
-    );
+    try {
+      // STEP 1: Pre-flight check before connection
+      final envCheck = await _environmentService.performPreFlightCheck();
+      if (!envCheck.isReady) {
+        _logger.w('⚠️ Environment not ready for connection');
+        throw _createPrinterErrorFromEnvError(envCheck.error!);
+      }
 
-    // Connect
-    await _bluetoothPrinter.connect(btDevice);
+      // STEP 2: Disconnect any existing connection first
+      await _safeDisconnectBluetooth();
 
-    // Check if connected
-    final isConnected = await _bluetoothPrinter.isConnected;
-    if (isConnected == true) {
+      // STEP 3: Verify device is still paired
+      final bondedDevices = await _bluetoothPrinter.getBondedDevices();
+      final btDevice = bondedDevices.firstWhere(
+        (d) => d.address == device.address,
+        orElse: () => throw PrinterError.pairingRequired(),
+      );
+
+      _logger.i('📱 Found paired device: ${btDevice.name}');
+
+      // STEP 4: Attempt connection with retry logic
+      bool connected = false;
+      int attempt = 0;
+
+      while (!connected && attempt <= _maxRetries) {
+        attempt++;
+        _logger.i('🔄 Connection attempt $attempt/${_maxRetries + 1}');
+
+        try {
+          // Attempt connection with timeout
+          await _bluetoothPrinter.connect(btDevice).timeout(
+            _connectionTimeout,
+            onTimeout: () {
+              throw PrinterError.connectionTimeout();
+            },
+          );
+
+          // Small delay to let connection stabilize
+          await Future.delayed(const Duration(milliseconds: 500));
+
+          // Verify connection
+          final isConnected = await _bluetoothPrinter.isConnected;
+          connected = isConnected == true;
+
+          if (connected) {
+            _logger.i('✅ Connection successful on attempt $attempt');
+          } else {
+            _logger.w('⚠️ Connection returned false on attempt $attempt');
+          }
+        } catch (e) {
+          _logger.w('⚠️ Connection attempt $attempt failed: $e');
+
+          // If this was the last attempt, throw the error
+          if (attempt > _maxRetries) {
+            // Map the error to user-friendly message
+            final mappedError = _errorMapper.mapError(e, context: 'Bluetooth connection');
+            throw mappedError;
+          }
+
+          // Otherwise, wait before retry
+          _logger.i('⏳ Waiting ${_retryDelay.inSeconds}s before retry...');
+          await Future.delayed(_retryDelay);
+        }
+      }
+
+      if (!connected) {
+        _logger.e('❌ Failed to connect after ${_maxRetries + 1} attempts');
+        throw PrinterError.connectionRefused();
+      }
+
+      // STEP 5: Save connected printer
       _connectedPrinter = device.copyWith(isConnected: true);
       await _saveConnectedPrinter(device);
-      return true;
-    }
 
-    return false;
+      _logger.i('✅ Successfully connected to ${device.name}');
+      return true;
+
+    } catch (e) {
+      _logger.e('❌ Bluetooth connection failed: $e');
+
+      // If it's already a PrinterError, rethrow it
+      if (e is PrinterError) {
+        rethrow;
+      }
+
+      // Otherwise, map it
+      final mappedError = _errorMapper.mapError(e, context: 'Bluetooth connection');
+      throw mappedError;
+    }
+  }
+
+  /// Safely disconnect from Bluetooth printer
+  /// Does not throw errors if already disconnected
+  Future<void> _safeDisconnectBluetooth() async {
+    try {
+      final isConnected = await _bluetoothPrinter.isConnected;
+      if (isConnected == true) {
+        _logger.i('🔌 Disconnecting from previous Bluetooth connection...');
+        await _bluetoothPrinter.disconnect();
+        await Future.delayed(const Duration(milliseconds: 500)); // Give time to disconnect
+        _logger.i('✅ Previous connection disconnected');
+      }
+    } catch (e) {
+      _logger.w('⚠️ Error during safe disconnect (ignoring): $e');
+      // Ignore errors during disconnect - we're trying to connect anyway
+    }
   }
 
   /// Connect to USB printer (DISABLED - usb_serial package has compatibility issues)

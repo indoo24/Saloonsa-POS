@@ -36,6 +36,10 @@ dependencies:
   connectivity_plus: ^6.0.0  # For network connectivity monitoring
   # UI Effects
   shimmer: ^3.0.0  # For loading shimmer effects
+  # Permissions
+  permission_handler: ^11.3.1  # For runtime permissions
+  # Device Info
+  device_info_plus: ^11.2.0  # For device detection (Sunmi, etc.)
 
 dev_dependencies:
   flutter_test:
