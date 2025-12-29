@@ -22,12 +22,7 @@ class User {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'email': email,
-      'mobile': mobile,
-    };
+    return {'id': id, 'name': name, 'email': email, 'mobile': mobile};
   }
 
   @override

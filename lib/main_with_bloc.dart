@@ -26,7 +26,9 @@ class _MyAppState extends State<MyApp> {
 
   void _toggleTheme() {
     setState(() {
-      _themeMode = _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+      _themeMode = _themeMode == ThemeMode.light
+          ? ThemeMode.dark
+          : ThemeMode.light;
     });
   }
 
@@ -44,14 +46,13 @@ class _MyAppState extends State<MyApp> {
         // Cubits manage state for different features
         providers: [
           BlocProvider(
-            create: (context) => AuthCubit(
-              repository: context.read<AuthRepository>(),
-            )..checkAuthStatus(), // Check if user is already logged in
+            create: (context) =>
+                AuthCubit(repository: context.read<AuthRepository>())
+                  ..checkAuthStatus(), // Check if user is already logged in
           ),
           BlocProvider(
-            create: (context) => CashierCubit(
-              repository: context.read<CashierRepository>(),
-            ),
+            create: (context) =>
+                CashierCubit(repository: context.read<CashierRepository>()),
           ),
         ],
         child: MaterialApp(
@@ -60,7 +61,7 @@ class _MyAppState extends State<MyApp> {
           theme: lightTheme,
           darkTheme: darkTheme,
           themeMode: _themeMode,
-          
+
           // STEP 3: Use BlocBuilder to decide which screen to show
           // This automatically switches screens based on authentication state
           // No need for manual navigation!
@@ -69,11 +70,11 @@ class _MyAppState extends State<MyApp> {
               // Show splash screen while checking if user is logged in
               if (state is AuthChecking) {
                 return SplashScreen(onToggleTheme: _toggleTheme);
-              } 
+              }
               // User is authenticated - show cashier screen
               else if (state is AuthAuthenticated) {
                 return CashierScreen(onToggleTheme: _toggleTheme);
-              } 
+              }
               // User not authenticated - show login screen
               else {
                 return LoginScreen(onToggleTheme: _toggleTheme);

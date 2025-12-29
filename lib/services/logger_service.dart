@@ -15,16 +15,30 @@ class LoggerService {
   );
 
   // API Logging
-  static void apiRequest(String method, String endpoint, {Map<String, dynamic>? data}) {
-    _logger.i('🌐 API REQUEST: $method $endpoint${data != null ? '\nData: $data' : ''}');
+  static void apiRequest(
+    String method,
+    String endpoint, {
+    Map<String, dynamic>? data,
+  }) {
+    _logger.i(
+      '🌐 API REQUEST: $method $endpoint${data != null ? '\nData: $data' : ''}',
+    );
   }
 
   static void apiResponse(String endpoint, int statusCode, dynamic data) {
     _logger.d('✅ API RESPONSE: $endpoint\nStatus: $statusCode\nData: $data');
   }
 
-  static void apiError(String endpoint, dynamic error, {StackTrace? stackTrace}) {
-    _logger.e('❌ API ERROR: $endpoint\nError: $error', error: error, stackTrace: stackTrace);
+  static void apiError(
+    String endpoint,
+    dynamic error, {
+    StackTrace? stackTrace,
+  }) {
+    _logger.e(
+      '❌ API ERROR: $endpoint\nError: $error',
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 
   // General Logging

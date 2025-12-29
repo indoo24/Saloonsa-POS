@@ -1,9 +1,7 @@
 import '../models/service-model.dart';
 
 final List<ServiceModel> allServices = [
-
   // --- تصفيف وقص الشعر (tab-5) ---
-
   ServiceModel(
     id: 4,
     name: "تصفيف وقص الشعر",

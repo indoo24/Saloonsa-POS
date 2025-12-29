@@ -27,7 +27,10 @@ class CashierCubit extends Cubit<CashierState> {
     try {
       final user = await _authRepository.getCurrentUser();
       if (user != null) {
-        LoggerService.info('Current cashier/user ID', data: {'id': user.id, 'name': user.name});
+        LoggerService.info(
+          'Current cashier/user ID',
+          data: {'id': user.id, 'name': user.name},
+        );
         return user.id;
       }
       LoggerService.warning('No current user found');
@@ -71,17 +74,17 @@ class CashierCubit extends Cubit<CashierState> {
             .where((c) => c.isNotEmpty)
             .toSet()
             .toList();
-        
+
         categories = categoryNames
             .asMap()
             .entries
             .map((e) => Category(id: e.key + 1, name: e.value))
             .toList();
-        
-        LoggerService.info('Extracted categories from services', data: {
-          'count': categories.length,
-          'categories': categoryNames,
-        });
+
+        LoggerService.info(
+          'Extracted categories from services',
+          data: {'count': categories.length, 'categories': categoryNames},
+        );
       }
 
       LoggerService.info(
@@ -412,8 +415,17 @@ class CashierCubit extends Cubit<CashierState> {
   /// Get print data for an order from API
   Future<Map<String, dynamic>?> getPrintData(int orderId) async {
     try {
-      LoggerService.info('Getting print data for order', data: {'orderId': orderId});
+      LoggerService.info(
+        'Getting print data for order',
+        data: {'orderId': orderId},
+      );
       final printData = await repository.getPrintData(orderId);
+      
+      // DEBUG: Log the entire API response to identify payment method field
+      print('🔍 === RAW API RESPONSE FROM getPrintData ===');
+      print(printData);
+      print('🔍 === END RAW API RESPONSE ===');
+      
       return printData;
     } catch (e, stackTrace) {
       LoggerService.error(

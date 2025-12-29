@@ -1,8 +1,8 @@
 /// Printer connection type
 enum PrinterConnectionType {
-  wifi,      // Network/WiFi printer
+  wifi, // Network/WiFi printer
   bluetooth, // Bluetooth printer
-  usb,       // USB printer
+  usb, // USB printer
 }
 
 /// Printer device information
@@ -10,7 +10,7 @@ class PrinterDevice {
   final String id;
   final String name;
   final String? address; // IP address for WiFi, MAC address for Bluetooth
-  final int? port;       // Port for WiFi printers (usually 9100)
+  final int? port; // Port for WiFi printers (usually 9100)
   final PrinterConnectionType type;
   final bool isConnected;
 

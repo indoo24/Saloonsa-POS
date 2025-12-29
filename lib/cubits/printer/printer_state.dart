@@ -17,7 +17,7 @@ class PrinterInitial extends PrinterState {
 /// Scanning for printers
 class PrinterScanning extends PrinterState {
   final PrinterConnectionType type;
-  
+
   const PrinterScanning(this.type);
 
   @override
@@ -28,7 +28,7 @@ class PrinterScanning extends PrinterState {
 class PrintersFound extends PrinterState {
   final List<PrinterDevice> devices;
   final PrinterConnectionType type;
-  
+
   const PrintersFound(this.devices, this.type);
 
   @override
@@ -38,7 +38,7 @@ class PrintersFound extends PrinterState {
 /// Connecting to printer
 class PrinterConnecting extends PrinterState {
   final PrinterDevice device;
-  
+
   const PrinterConnecting(this.device);
 
   @override
@@ -48,7 +48,7 @@ class PrinterConnecting extends PrinterState {
 /// Printer connected successfully
 class PrinterConnected extends PrinterState {
   final PrinterDevice device;
-  
+
   const PrinterConnected(this.device);
 
   @override
@@ -73,7 +73,7 @@ class PrinterPrintSuccess extends PrinterState {
 /// Error state
 class PrinterError extends PrinterState {
   final String message;
-  
+
   const PrinterError(this.message);
 
   @override

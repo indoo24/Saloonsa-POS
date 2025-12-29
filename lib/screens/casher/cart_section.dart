@@ -36,15 +36,14 @@ class CartSection extends StatelessWidget {
       ),
       child: Card(
         margin: const EdgeInsets.all(12),
-        elevation: 0, // Remove card elevation since container has shadow
+        elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
             children: [
-              // Drag Handle Indicator with visual feedback
+              // Drag Handle Indicator
               Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -61,29 +60,29 @@ class CartSection extends StatelessWidget {
                     Container(
                       width: 40,
                       height: 4,
-                      margin: const EdgeInsets.only(bottom: 8),
                       decoration: BoxDecoration(
                         color: Colors.grey[400],
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
+                    const SizedBox(height: 2),
                     Text(
                       'اسحب للتحكم بالحجم',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 8, color: Colors.grey[600]),
                     ),
-                    const SizedBox(height: 8),
                   ],
                 ),
               ),
+              const SizedBox(height: 6),
+              // Header with customer name and total
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Flexible(
                     child: Text(
-                      selectedCustomer != null ? ' ${selectedCustomer!.name}' : "الخدمات المختارة",
+                      selectedCustomer != null
+                          ? ' ${selectedCustomer!.name}'
+                          : "الخدمات المختارة",
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: theme.colorScheme.primary,
@@ -101,103 +100,133 @@ class CartSection extends StatelessWidget {
                   ),
                 ],
               ),
-            const Divider(height: 15),
-            Expanded(
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: cart.length,
-                itemBuilder: (context, index) {
-                  final service = cart[index];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Row(
-                            children: [
-                              CircleAvatar(
-                                child: Icon(_getIconForCategory(service.category), size: 18),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      service.name,
-                                      overflow: TextOverflow.ellipsis,
-                                      maxLines: 1,
-                                    ),
-                                    Text(
-                                      service.barber ?? 'لم يتم تحديد حلاق',
-                                      style: const TextStyle(
-                                        color: Colors.grey,
-                                        fontSize: 12,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                      maxLines: 1,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
+              const Divider(height: 8),
+              // Scrollable cart items - takes all available space
+              Expanded(
+                child: cart.isEmpty
+                    ? Center(
+                        child: Text(
+                          'لا توجد خدمات في السلة',
+                          style: TextStyle(
+                            color: Colors.grey[400],
+                            fontSize: 14,
                           ),
                         ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Text('${service.price.toStringAsFixed(2)} ر.س',
-                                style: TextStyle(
+                      )
+                    : ListView.builder(
+                        padding: EdgeInsets.zero,
+                        physics: const BouncingScrollPhysics(),
+                        itemCount: cart.length,
+                        itemBuilder: (context, index) {
+                          final service = cart[index];
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 4),
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 16,
+                                  child: Icon(
+                                    _getIconForCategory(service.category),
+                                    size: 16,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        service.name,
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      Text(
+                                        service.barber ?? 'لم يتم تحديد حلاق',
+                                        style: TextStyle(
+                                          color: Colors.grey[600],
+                                          fontSize: 11,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '${service.price.toStringAsFixed(2)} ر.س',
+                                  style: TextStyle(
                                     color: theme.colorScheme.secondary,
                                     fontWeight: FontWeight.bold,
-                                    fontSize: 13
-                                )),
-                            const SizedBox(width: 1),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
-                              onPressed: () {
-                                // Close keyboard when removing item
-                                FocusScope.of(context).unfocus();
-                                removeFromCart(index);
-                              },
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.redAccent,
+                                    size: 18,
+                                  ),
+                                  onPressed: () {
+                                    FocusScope.of(context).unfocus();
+                                    removeFromCart(index);
+                                  },
+                                  padding: const EdgeInsets.all(4),
+                                  constraints: const BoxConstraints(
+                                    minWidth: 28,
+                                    minHeight: 28,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
+                          );
+                        },
+                      ),
+              ),
+              // Bottom section with flexible spacing
+              const Divider(height: 8),
+              const SizedBox(height: 4),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.receipt_long, size: 20),
+                label: const Text("الانتقال إلى الفاتورة"),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: () {
+                  FocusScope.of(context).unfocus();
+                  navigateToInvoice();
                 },
               ),
-            ),
-            const Divider(height: 24),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.receipt_long),
-              label: const Text("الانتقال إلى الفاتورة"),
-              onPressed: () {
-                // Close keyboard before navigating to invoice
-                FocusScope.of(context).unfocus();
-                navigateToInvoice();
-              },
-            ),
-          ],
+              const SizedBox(height: 4),
+            ],
+          ),
         ),
       ),
-    ),
     ); // Container closing
   }
 
   IconData _getIconForCategory(String category) {
     switch (category) {
-      case "قص الشعر": return Icons.content_cut;
-      case "حلاقة ذقن": return Icons.face_retouching_natural;
-      case "العناية بالبشرة": return Icons.cleaning_services;
-      case "الصبغات": return Icons.brush;
-      case "استشوار": return Icons.air;
-      case "تسريحة": return Icons.style;
-      default: return Icons.cut;
+      case "قص الشعر":
+        return Icons.content_cut;
+      case "حلاقة ذقن":
+        return Icons.face_retouching_natural;
+      case "العناية بالبشرة":
+        return Icons.cleaning_services;
+      case "الصبغات":
+        return Icons.brush;
+      case "استشوار":
+        return Icons.air;
+      case "تسريحة":
+        return Icons.style;
+      default:
+        return Icons.cut;
     }
   }
 }

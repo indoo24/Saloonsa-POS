@@ -628,7 +628,7 @@ class CashierRepository {
       // CRITICAL: Discount handling per business rules
       // App UI collects discount as PERCENTAGE (e.g., 50 for 50%)
       // Backend MUST treat this as percentage, not fixed amount
-      // If backend expects explicit type, add: 
+      // If backend expects explicit type, add:
       //'discount_type': 'percentage'
       if (discount > 0) {
         requestBody['discount'] =

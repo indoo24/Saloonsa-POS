@@ -1,18 +1,20 @@
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'logger_service.dart';
+import 'network_service.dart';
+import '../core/config/app_config.dart';
 
 /// API Client for handling all HTTP requests
 /// Includes automatic token management and detailed logging
 class ApiClient {
-  // Base URL for API - Change this to match your server
-  static const String baseUrl = 'http://10.0.2.2:8000/api';
-
   // Storage keys
   static const String _tokenKey = 'auth_token';
   static const String _userKey = 'user_data';
   static const String _salonIdKey = 'salon_id';
+  static const String _subdomainKey = 'subdomain';
 
   // Singleton pattern
   static final ApiClient _instance = ApiClient._internal();
@@ -21,6 +23,17 @@ class ApiClient {
 
   String? _authToken;
   int? _salonId;
+  String? _subdomain;
+
+  // Base URL for API - dynamically constructed based on subdomain
+  String get baseUrl {
+    if (_subdomain != null && _subdomain!.isNotEmpty) {
+      // Use subdomain-based URL: https://subdomain.saloonsa.com/api
+      return 'https://$_subdomain.saloonsa.com/api';
+    }
+    // Fallback to default URL
+    return AppConfig.current.apiBaseUrl;
+  }
 
   /// Initialize the API client by loading stored token
   Future<void> initialize() async {
@@ -28,11 +41,19 @@ class ApiClient {
       final prefs = await SharedPreferences.getInstance();
       _authToken = prefs.getString(_tokenKey);
       _salonId = prefs.getInt(_salonIdKey);
+      _subdomain = prefs.getString(_subdomainKey);
 
       if (_authToken != null) {
         LoggerService.info('API Client initialized with stored token');
       } else {
         LoggerService.info('API Client initialized without token');
+      }
+
+      if (_subdomain != null) {
+        LoggerService.info(
+          'API Client initialized with subdomain: $_subdomain',
+        );
+        LoggerService.info('Using base URL: $baseUrl');
       }
     } catch (e, stackTrace) {
       LoggerService.error(
@@ -62,14 +83,28 @@ class ApiClient {
   /// Get stored salon ID
   int? getSalonId() => _salonId;
 
+  /// Set subdomain (changes the base URL)
+  Future<void> setSubdomain(String subdomain) async {
+    _subdomain = subdomain;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_subdomainKey, subdomain);
+    LoggerService.info('Subdomain stored: $subdomain');
+    LoggerService.info('Base URL updated to: $baseUrl');
+  }
+
+  /// Get stored subdomain
+  String? getSubdomain() => _subdomain;
+
   /// Clear authentication data
   Future<void> clearAuth() async {
     _authToken = null;
     _salonId = null;
+    _subdomain = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_tokenKey);
     await prefs.remove(_userKey);
     await prefs.remove(_salonIdKey);
+    await prefs.remove(_subdomainKey);
     LoggerService.authAction('Auth data cleared');
   }
 
@@ -127,21 +162,32 @@ class ApiClient {
     bool requiresAuth = true,
   }) async {
     try {
+      // Check network connectivity first
+      await NetworkService().ensureConnected();
+
       final uri = Uri.parse(
         '$baseUrl$endpoint',
       ).replace(queryParameters: queryParams);
 
       LoggerService.apiRequest('GET', endpoint, data: queryParams);
 
-      final response = await http.get(
-        uri,
-        headers: _buildHeaders(includeAuth: requiresAuth),
-      );
+      final response = await http
+          .get(uri, headers: _buildHeaders(includeAuth: requiresAuth))
+          .timeout(
+            AppConfig.current.apiTimeout,
+            onTimeout: () => throw TimeoutException('Request timeout'),
+          );
 
       return _handleResponse(response, endpoint);
+    } on SocketException catch (e, stackTrace) {
+      LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
+      throw NetworkException('لا يوجد اتصال بالإنترنت');
+    } on TimeoutException catch (e, stackTrace) {
+      LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
+      throw NetworkException('انتهت مهلة الطلب. يرجى المحاولة مرة أخرى');
     } catch (e, stackTrace) {
       LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
-      throw ApiException('Network error: ${e.toString()}');
+      throw ApiException('خطأ في الشبكة: ${e.toString()}');
     }
   }
 
@@ -152,20 +198,34 @@ class ApiClient {
     bool requiresAuth = true,
   }) async {
     try {
+      // Check network connectivity first
+      await NetworkService().ensureConnected();
+
       final uri = Uri.parse('$baseUrl$endpoint');
 
       LoggerService.apiRequest('POST', endpoint, data: body);
 
-      final response = await http.post(
-        uri,
-        headers: _buildHeaders(includeAuth: requiresAuth),
-        body: body != null ? json.encode(body) : null,
-      );
+      final response = await http
+          .post(
+            uri,
+            headers: _buildHeaders(includeAuth: requiresAuth),
+            body: body != null ? json.encode(body) : null,
+          )
+          .timeout(
+            AppConfig.current.apiTimeout,
+            onTimeout: () => throw TimeoutException('Request timeout'),
+          );
 
       return _handleResponse(response, endpoint);
+    } on SocketException catch (e, stackTrace) {
+      LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
+      throw NetworkException('لا يوجد اتصال بالإنترنت');
+    } on TimeoutException catch (e, stackTrace) {
+      LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
+      throw NetworkException('انتهت مهلة الطلب. يرجى المحاولة مرة أخرى');
     } catch (e, stackTrace) {
       LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
-      throw ApiException('Network error: ${e.toString()}');
+      throw ApiException('خطأ في الشبكة: ${e.toString()}');
     }
   }
 
@@ -176,20 +236,34 @@ class ApiClient {
     bool requiresAuth = true,
   }) async {
     try {
+      // Check network connectivity first
+      await NetworkService().ensureConnected();
+
       final uri = Uri.parse('$baseUrl$endpoint');
 
       LoggerService.apiRequest('PUT', endpoint, data: body);
 
-      final response = await http.put(
-        uri,
-        headers: _buildHeaders(includeAuth: requiresAuth),
-        body: body != null ? json.encode(body) : null,
-      );
+      final response = await http
+          .put(
+            uri,
+            headers: _buildHeaders(includeAuth: requiresAuth),
+            body: body != null ? json.encode(body) : null,
+          )
+          .timeout(
+            AppConfig.current.apiTimeout,
+            onTimeout: () => throw TimeoutException('Request timeout'),
+          );
 
       return _handleResponse(response, endpoint);
+    } on SocketException catch (e, stackTrace) {
+      LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
+      throw NetworkException('لا يوجد اتصال بالإنترنت');
+    } on TimeoutException catch (e, stackTrace) {
+      LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
+      throw NetworkException('انتهت مهلة الطلب. يرجى المحاولة مرة أخرى');
     } catch (e, stackTrace) {
       LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
-      throw ApiException('Network error: ${e.toString()}');
+      throw ApiException('خطأ في الشبكة: ${e.toString()}');
     }
   }
 
@@ -199,19 +273,30 @@ class ApiClient {
     bool requiresAuth = true,
   }) async {
     try {
+      // Check network connectivity first
+      await NetworkService().ensureConnected();
+
       final uri = Uri.parse('$baseUrl$endpoint');
 
       LoggerService.apiRequest('DELETE', endpoint);
 
-      final response = await http.delete(
-        uri,
-        headers: _buildHeaders(includeAuth: requiresAuth),
-      );
+      final response = await http
+          .delete(uri, headers: _buildHeaders(includeAuth: requiresAuth))
+          .timeout(
+            AppConfig.current.apiTimeout,
+            onTimeout: () => throw TimeoutException('Request timeout'),
+          );
 
       return _handleResponse(response, endpoint);
+    } on SocketException catch (e, stackTrace) {
+      LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
+      throw NetworkException('لا يوجد اتصال بالإنترنت');
+    } on TimeoutException catch (e, stackTrace) {
+      LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
+      throw NetworkException('انتهت مهلة الطلب. يرجى المحاولة مرة أخرى');
     } catch (e, stackTrace) {
       LoggerService.apiError(endpoint, e, stackTrace: stackTrace);
-      throw ApiException('Network error: ${e.toString()}');
+      throw ApiException('خطأ في الشبكة: ${e.toString()}');
     }
   }
 
@@ -239,11 +324,44 @@ class ApiClient {
         (match) => ',"${match.group(1)}"${match.group(2)}',
       );
 
+      // 2. Handle truncated JSON - attempt to close brackets if JSON is incomplete
+      if (statusCode >= 200 && statusCode < 300) {
+        // Count opening and closing brackets
+        final openBraces = '{'.allMatches(sanitizedBody).length;
+        final closeBraces = '}'.allMatches(sanitizedBody).length;
+        final openBrackets = '['.allMatches(sanitizedBody).length;
+        final closeBrackets = ']'.allMatches(sanitizedBody).length;
+
+        // If truncated, try to close it properly
+        if (openBraces > closeBraces || openBrackets > closeBrackets) {
+          LoggerService.warning(
+            '⚠️ Detected truncated JSON response from $endpoint',
+            data: {
+              'bodyLength': sanitizedBody.length,
+              'openBraces': openBraces,
+              'closeBraces': closeBraces,
+              'missing': openBraces - closeBraces,
+            },
+          );
+
+          // Add missing closing brackets/braces
+          sanitizedBody += ']' * (openBrackets - closeBrackets);
+          sanitizedBody += '}' * (openBraces - closeBraces);
+
+          LoggerService.warning(
+            '🔧 Attempted to fix truncated JSON by adding missing closures',
+          );
+        }
+      }
+
       // If we made changes, log it
       if (sanitizedBody != response.body) {
         LoggerService.warning(
           'Sanitized malformed JSON from backend',
-          data: {'endpoint': endpoint, 'changes': 'Fixed missing quotes'},
+          data: {
+            'endpoint': endpoint,
+            'changes': 'Fixed quotes and/or truncation',
+          },
         );
       }
 

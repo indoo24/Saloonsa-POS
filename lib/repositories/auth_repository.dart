@@ -15,40 +15,22 @@ class AuthRepository {
     required String subdomain,
   }) async {
     try {
-      LoggerService.authAction('Attempting login', data: {
-        'username': username,
-        'subdomain': subdomain,
-      });
-
-      // Step 1: Get salon by subdomain
-      final salonResponse = await _apiClient.get(
-        '/salons/by-domain/$subdomain',
-        requiresAuth: false,
+      LoggerService.authAction(
+        'Attempting login',
+        data: {'username': username, 'subdomain': subdomain},
       );
 
-      LoggerService.info('Salon API response', data: salonResponse);
+      // CRITICAL: Set subdomain FIRST to update the base URL
+      // This changes the URL from http://saloonsa.com to https://subdomain.saloonsa.com
+      await _apiClient.setSubdomain(subdomain);
+      LoggerService.info(
+        'Subdomain set, using base URL: ${_apiClient.baseUrl}',
+      );
 
-      if (!salonResponse['success']) {
-        throw Exception(salonResponse['message'] ?? 'فشل في العثور على الصالون');
-      }
-
-      final salonData = salonResponse['data'];
-      if (salonData == null) {
-        throw Exception('بيانات الصالون غير موجودة');
-      }
-
-      LoggerService.info('Salon data received', data: salonData);
-
-      final salon = Salon.fromJson(salonData);
-      LoggerService.info('Salon parsed successfully', data: salon.toJson());
-
-      // Step 2: Authenticate user
+      // Authenticate user directly (no salon lookup needed)
       final loginResponse = await _apiClient.post(
         '/auth/login',
-        body: {
-          'email': username,
-          'password': password,
-        },
+        body: {'email': username, 'password': password},
         requiresAuth: false,
       );
 
@@ -60,16 +42,36 @@ class AuthRepository {
       final user = User.fromJson(loginData['user']);
       final token = loginData['token'] as String;
 
-      // Step 3: Store token and salon ID
+      // Store token
       await _apiClient.setAuthToken(token);
-      await _apiClient.setSalonId(salon.id);
       await _apiClient.saveUserData(user.toJson());
 
-      LoggerService.authAction('Login successful', data: {
-        'userId': user.id,
-        'userName': user.name,
-        'salonId': salon.id,
-      });
+      // Get salon info from login response if available
+      int? salonId;
+      String? salonName;
+
+      if (loginData.containsKey('salon') && loginData['salon'] != null) {
+        final salonData = loginData['salon'];
+        final salon = Salon.fromJson(salonData);
+        salonId = salon.id;
+        salonName = salon.name;
+        await _apiClient.setSalonId(salon.id);
+      } else if (loginData.containsKey('salon_id')) {
+        salonId = loginData['salon_id'] as int?;
+        if (salonId != null) {
+          await _apiClient.setSalonId(salonId);
+        }
+      }
+
+      LoggerService.authAction(
+        'Login successful',
+        data: {
+          'userId': user.id,
+          'userName': user.name,
+          'subdomain': subdomain,
+          if (salonId != null) 'salonId': salonId,
+        },
+      );
 
       return {
         'token': token,
@@ -77,17 +79,12 @@ class AuthRepository {
         'username': user.name,
         'email': user.email,
         'subdomain': subdomain,
-        'salonId': salon.id,
-        'salonName': salon.name,
+        if (salonId != null) 'salonId': salonId,
+        if (salonName != null) 'salonName': salonName,
         'user': user.toJson(),
-        'salon': salon.toJson(),
       };
     } on ApiException catch (e) {
       LoggerService.error('Login API error', error: e);
-      // Provide user-friendly error messages
-      if (e.statusCode == 404) {
-        throw Exception('الصالون غير موجود. تأكد من اسم النطاق الفرعي');
-      }
       throw Exception(e.message);
     } on ValidationException catch (e) {
       LoggerService.error('Login validation error', error: e);
@@ -128,12 +125,19 @@ class AuthRepository {
     try {
       final userData = await _apiClient.getUserData();
       final isLoggedIn = userData != null;
-      
-      LoggerService.authAction('Check login status', data: {'isLoggedIn': isLoggedIn});
-      
+
+      LoggerService.authAction(
+        'Check login status',
+        data: {'isLoggedIn': isLoggedIn},
+      );
+
       return isLoggedIn;
     } catch (e, stackTrace) {
-      LoggerService.error('Failed to check login status', error: e, stackTrace: stackTrace);
+      LoggerService.error(
+        'Failed to check login status',
+        error: e,
+        stackTrace: stackTrace,
+      );
       return false;
     }
   }
@@ -142,14 +146,18 @@ class AuthRepository {
   Future<Map<String, dynamic>?> getUserData() async {
     try {
       final userData = await _apiClient.getUserData();
-      
+
       if (userData != null) {
         LoggerService.authAction('User data retrieved', data: userData);
       }
-      
+
       return userData;
     } catch (e, stackTrace) {
-      LoggerService.error('Failed to get user data', error: e, stackTrace: stackTrace);
+      LoggerService.error(
+        'Failed to get user data',
+        error: e,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
@@ -166,7 +174,7 @@ class AuthRepository {
       }
 
       final user = User.fromJson(response['data']);
-      
+
       // Update stored user data
       await _apiClient.saveUserData(user.toJson());
 
@@ -177,9 +185,12 @@ class AuthRepository {
       LoggerService.error('Get current user API error', error: e);
       return null;
     } catch (e, stackTrace) {
-      LoggerService.error('Failed to get current user', error: e, stackTrace: stackTrace);
+      LoggerService.error(
+        'Failed to get current user',
+        error: e,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
 }
-

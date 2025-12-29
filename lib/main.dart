@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'core/error/error_handler.dart';
 import 'theme.dart';
 import 'screens/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
@@ -10,16 +11,24 @@ import 'cubits/auth/auth_cubit.dart';
 import 'cubits/auth/auth_state.dart';
 import 'cubits/cashier/cashier_cubit.dart';
 import 'cubits/printer/printer_cubit.dart';
+import 'cubits/settings/settings_cubit.dart';
 import 'repositories/auth_repository.dart';
 import 'repositories/cashier_repository.dart';
 
 Future<void> main() async {
+  // Initialize error handling BEFORE anything else
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Run app with global error handling
+  await GlobalErrorHandler.runAppWithErrorHandling(await _buildApp());
+}
+
+Future<Widget> _buildApp() async {
   final prefs = await SharedPreferences.getInstance();
   final isDarkMode = prefs.getBool('isDarkMode') ?? false;
   final subdomain = prefs.getString('subdomain');
 
-  runApp(SalonApp(initialDarkMode: isDarkMode, subdomain: subdomain));
+  return SalonApp(initialDarkMode: isDarkMode, subdomain: subdomain);
 }
 
 class SalonApp extends StatefulWidget {
@@ -59,17 +68,21 @@ class _SalonAppState extends State<SalonApp> {
         // Step 2: Provide cubits to entire app
         providers: [
           BlocProvider(
-            create: (context) => AuthCubit(
-              repository: context.read<AuthRepository>(),
-            )..checkAuthStatus(), // Check if user is already logged in
+            create: (context) =>
+                AuthCubit(repository: context.read<AuthRepository>())
+                  ..checkAuthStatus(), // Check if user is already logged in
           ),
           BlocProvider(
-            create: (context) => CashierCubit(
-              repository: context.read<CashierRepository>(),
-            ),
+            create: (context) =>
+                CashierCubit(repository: context.read<CashierRepository>()),
           ),
           BlocProvider(
-            create: (context) => PrinterCubit()..initialize(), // Auto-reconnect to printer
+            create: (context) =>
+                PrinterCubit()..initialize(), // Auto-reconnect to printer
+          ),
+          BlocProvider(
+            create: (context) =>
+                SettingsCubit()..loadSettings(), // Load app settings on startup
           ),
         ],
         child: MaterialApp(
@@ -94,7 +107,10 @@ class _SalonAppState extends State<SalonApp> {
             builder: (context, state) {
               // Show splash screen while checking if user is logged in
               if (state is AuthChecking) {
-                return SplashScreen(onToggleTheme: _toggleTheme, subdomain: widget.subdomain);
+                return SplashScreen(
+                  onToggleTheme: _toggleTheme,
+                  subdomain: widget.subdomain,
+                );
               }
               // User is authenticated - show cashier screen
               else if (state is AuthAuthenticated) {
@@ -102,7 +118,10 @@ class _SalonAppState extends State<SalonApp> {
               }
               // User not authenticated - show login screen
               else {
-                return LoginScreen(onToggleTheme: _toggleTheme, subdomain: widget.subdomain);
+                return LoginScreen(
+                  onToggleTheme: _toggleTheme,
+                  subdomain: widget.subdomain,
+                );
               }
             },
           ),
