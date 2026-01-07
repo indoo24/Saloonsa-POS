@@ -4,44 +4,44 @@ import '../screens/casher/models/service-model.dart';
 import '../services/api_client.dart';
 
 /// Helper class to convert existing app data structures to InvoiceData
-/// 
+///
 /// This allows seamless integration with the new printing architecture
 /// while maintaining backward compatibility with existing code.
 class InvoiceDataMapper {
   /// Convert a logo path from API to full URL
   static String? _getLogoUrl(String? logoPath) {
     if (logoPath == null || logoPath.isEmpty) return null;
-    
+
     // If already a full URL, return as-is
     if (logoPath.startsWith('http://') || logoPath.startsWith('https://')) {
       return logoPath;
     }
-    
+
     // If it's a relative path, construct full URL with subdomain
     if (logoPath.startsWith('/storage/') || logoPath.startsWith('storage/')) {
       final apiClient = ApiClient();
       final subdomain = apiClient.getSubdomain();
-      
+
       // Remove leading slash if present
       final cleanPath = logoPath.startsWith('/') ? logoPath : '/$logoPath';
-      
+
       if (subdomain != null && subdomain.isNotEmpty) {
         return 'https://$subdomain.saloonsa.com$cleanPath';
       } else {
         return 'https://saloonsa.com$cleanPath';
       }
     }
-    
+
     // If it's an asset path (local), return as-is
     if (logoPath.startsWith('assets/')) {
       return logoPath;
     }
-    
+
     return logoPath;
   }
 
   /// Convert existing cart, customer, and settings data to InvoiceData
-  /// 
+  ///
   /// This preserves all business logic and calculations from the original code.
   static InvoiceData fromExistingData({
     required List<ServiceModel> services,
@@ -107,7 +107,7 @@ class InvoiceDataMapper {
   }
 
   /// Convert from API print data response to InvoiceData
-  /// 
+  ///
   /// This handles the backend response structure and maps it to InvoiceData
   static InvoiceData fromApiPrintData(
     Map<String, dynamic> printData, {
@@ -137,12 +137,12 @@ class InvoiceDataMapper {
         printData['invoice_number']?.toString() ??
         printData['order_id']?.toString() ??
         '';
-    
+
     print('📋 Invoice Number Debug:');
     print('  invoice_number from API: ${printData['invoice_number']}');
     print('  order_id from API: ${printData['order_id']}');
     print('  Using: $orderNumber');
-    
+
     final cashierName = printData['employee']?['name'] ?? 'الكاشير';
 
     final subtotal = (printData['subtotal'] as num?)?.toDouble() ?? 0.0;
@@ -151,13 +151,15 @@ class InvoiceDataMapper {
     final discountAmount =
         (printData['discount_amount'] as num?)?.toDouble() ?? 0.0;
     final taxRate = (printData['tax_rate'] as num?)?.toDouble() ?? 15.0;
-    final taxAmount = (printData['tax_amount'] as num?)?.toDouble() ??
+    final taxAmount =
+        (printData['tax_amount'] as num?)?.toDouble() ??
         (printData['tax'] as num?)?.toDouble() ??
         0.0;
     final grandTotal = (printData['total'] as num?)?.toDouble() ?? 0.0;
 
     final paid = (printData['paid'] as num?)?.toDouble();
-    final remaining = (printData['remaining'] as num?)?.toDouble() ??
+    final remaining =
+        (printData['remaining'] as num?)?.toDouble() ??
         (printData['due'] as num?)?.toDouble();
 
     // Extract payment method - try multiple possible field names
@@ -167,19 +169,21 @@ class InvoiceDataMapper {
     print('  paymentType: ${printData['paymentType']}');
     print('  paymentMethod: ${printData['paymentMethod']}');
     print('  All keys: ${printData.keys.toList()}');
-    
-    final paymentMethodFromApi = printData['payment_type']?.toString() ??
+
+    final paymentMethodFromApi =
+        printData['payment_type']?.toString() ??
         printData['payment_method']?.toString() ??
         printData['paymentType']?.toString() ??
         printData['paymentMethod']?.toString();
-    
+
     print('  Raw value: $paymentMethodFromApi');
     final paymentMethod = _mapPaymentTypeToArabic(paymentMethodFromApi);
     print('  Mapped to Arabic: $paymentMethod');
 
     // Extract customer data
     final customerData = printData['customer'] as Map<String, dynamic>?;
-    final finalCustomerName = customerData?['name'] ?? customerName ?? 'عميل كاش';
+    final finalCustomerName =
+        customerData?['name'] ?? customerName ?? 'عميل كاش';
     final finalCustomerPhone = customerData?['mobile'] ?? customerPhone;
 
     // Extract date
@@ -224,11 +228,11 @@ class InvoiceDataMapper {
       print('⚠️ Payment type is null or empty, defaulting to نقدي');
       return 'نقدي';
     }
-    
+
     print('🔄 Mapping payment type: "$paymentType"');
-    
+
     final normalized = paymentType.toLowerCase().trim();
-    
+
     String result;
     switch (normalized) {
       case 'cash':
@@ -250,7 +254,7 @@ class InvoiceDataMapper {
         print('⚠️ Unknown payment type: "$paymentType", using as-is');
         result = paymentType;
     }
-    
+
     print('✅ Mapped to: "$result"');
     return result;
   }

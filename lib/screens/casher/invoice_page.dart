@@ -1,16 +1,17 @@
-import 'package:barber_casher/screens/casher/print_dirct.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart' as esc_pos;
 import '../../cubits/cashier/cashier_cubit.dart';
 import '../../cubits/cashier/cashier_state.dart';
 import '../../models/payment_method.dart';
+import '../../models/printer_settings.dart' as models;
 import '../../helpers/invoice_data_mapper.dart';
 import '../../services/settings_service.dart';
+import '../../screens/printing/thermal_preview_screen.dart';
 import 'thermal_receipt_pdf_generator.dart';
-import 'pdf_invoice.dart';
 import 'models/customer.dart';
 import 'models/service-model.dart';
 import 'services/printer_service.dart';
@@ -135,6 +136,18 @@ class _InvoicePageState extends State<InvoicePage> {
     return 'cash';
   }
 
+  /// Convert from models.PaperSize to esc_pos.PaperSize
+  esc_pos.PaperSize _convertToEscPosPaperSize(models.PaperSize paperSize) {
+    switch (paperSize) {
+      case models.PaperSize.mm58:
+        return esc_pos.PaperSize.mm58;
+      case models.PaperSize.mm80:
+        return esc_pos.PaperSize.mm80;
+      case models.PaperSize.a4:
+        return esc_pos.PaperSize.mm80; // Default A4 to 80mm for thermal
+    }
+  }
+
   // Future<void> _handlePrint() async {
   //   final pdfData = await generateInvoicePdf(
   //     customer: widget.customer,
@@ -145,13 +158,13 @@ class _InvoicePageState extends State<InvoicePage> {
   //   );
   //   await Printing.layoutPdf(onLayout: (_) => pdfData);
   // }
-  
+
   /// Check if a printer is connected via PrinterService
   /// This properly handles WiFi, Bluetooth, and USB printers
   bool isPrinterConnected() {
     final printerService = PrinterService();
     final isConnected = printerService.connectedPrinter != null;
-    
+
     print('🔌 Printer Connection Status: $isConnected');
     if (isConnected) {
       final printer = printerService.connectedPrinter!;
@@ -159,9 +172,11 @@ class _InvoicePageState extends State<InvoicePage> {
       print('  Type: ${printer.type}');
       print('  Address: ${printer.address}');
     } else {
-      print('  ⚠️ No printer connected. Please connect a printer from Settings.');
+      print(
+        '  ⚠️ No printer connected. Please connect a printer from Settings.',
+      );
     }
-    
+
     return isConnected;
   }
 
@@ -248,9 +263,10 @@ class _InvoicePageState extends State<InvoicePage> {
       print('📄 Generating PDF from API data...');
 
       // Generate PDF from API data
-      final pdfBytes = await ThermalReceiptPdfGenerator.generateThermalReceiptPdf(
-        data: invoiceData,
-      );
+      final pdfBytes =
+          await ThermalReceiptPdfGenerator.generateThermalReceiptPdf(
+            data: invoiceData,
+          );
 
       print('✅ PDF generated successfully');
 
@@ -371,87 +387,148 @@ class _InvoicePageState extends State<InvoicePage> {
     }
   }
 
-  // Save and print invoice (FIXED)
-Future<void> _handleSaveAndPrint() async {
-  if (_isSaving) return;
+  // ════════════════════════════════════════════════════════════════════════════
+  // PRODUCTION-GRADE SAVE & PRINT WORKFLOW
+  // ════════════════════════════════════════════════════════════════════════════
+  //
+  // STRICT FLOW (NON-NEGOTIABLE):
+  // 1. Save invoice to backend (if fails → STOP)
+  // 2. Navigate to ThermalPreviewScreen (user sees exact receipt)
+  // 3. User confirms and presses "Print Receipt" button
+  // 4. Attempt thermal printing (PRIMARY PATH)
+  // 5. If thermal fails → automatic PDF fallback (SAFETY NET)
+  // ════════════════════════════════════════════════════════════════════════════
 
-  setState(() => _isSaving = true);
+  Future<void> _handleSaveAndPrint() async {
+    if (_isSaving) return;
 
-  try {
-    final calculations = _calculateTotals();
-    final discountPercentage = calculations['discountPercentage']!;
-    final finalTotal = calculations['finalTotal']!;
-    final paidAmount = double.tryParse(_paidController.text) ?? finalTotal;
+    setState(() => _isSaving = true);
 
-    final apiPaymentType = _getPaymentTypeForApi(context);
+    try {
+      // ═══ STEP 1: SAVE INVOICE ═══
+      print('═══════════════════════════════════════════');
+      print('STEP 1: SAVING INVOICE TO BACKEND');
+      print('═══════════════════════════════════════════');
 
-    final invoice = await context.read<CashierCubit>().submitInvoice(
-      paymentType: apiPaymentType,
-      tax: 0,
-      discount: discountPercentage,
-      paid: paidAmount,
-    );
+      final calculations = _calculateTotals();
+      final discountPercentage = calculations['discountPercentage']!;
+      final finalTotal = calculations['finalTotal']!;
+      final paidAmount = double.tryParse(_paidController.text) ?? finalTotal;
 
-    if (invoice == null) {
-      throw Exception('فشل في حفظ الفاتورة');
-    }
+      final apiPaymentType = _getPaymentTypeForApi(context);
 
-    setState(() {
-      _orderNumberController.text = invoice.invoiceNumber.toString();
-    });
-
-    final printData =
-        await context.read<CashierCubit>().getPrintData(invoice.id);
-
-    if (printData == null) {
-      throw Exception('فشل في جلب بيانات الطباعة');
-    }
-
-    /// 🔥 IMPORTANT: let Flutter finish button tap frame
-    await Future.delayed(const Duration(milliseconds: 100));
-
-    final isPrintDirect = await _handlePrintWithApiData(printData);
-
-    if (!mounted) return;
-
-    if (isPrintDirect) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ تم إرسال الفاتورة للطابعة بنجاح'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-        ),
+      final invoice = await context.read<CashierCubit>().submitInvoice(
+        paymentType: apiPaymentType,
+        tax: 0, // Backend calculates
+        discount: discountPercentage,
+        paid: paidAmount,
       );
 
-      /// 🔥 Give socket time to flush
-      await Future.delayed(const Duration(milliseconds: 400));
+      if (invoice == null) {
+        throw Exception('فشل في حفظ الفاتورة');
+      }
 
-      /// 🔥 Close page AFTER frame completes
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Navigator.of(context).pop();
+      print('✅ Invoice saved successfully');
+      print('   Invoice Number: ${invoice.invoiceNumber}');
+      print('   Invoice ID: ${invoice.id}');
+
+      // Update order number field
+      setState(() {
+        _orderNumberController.text = invoice.invoiceNumber.toString();
       });
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ تم حفظ الفاتورة - أكمل الطباعة من النافذة'),
-          backgroundColor: Colors.green,
+
+      // ═══ STEP 2: FETCH PRINT DATA FROM API ═══
+      print('═══════════════════════════════════════════');
+      print('STEP 2: FETCHING PRINT DATA FROM API');
+      print('═══════════════════════════════════════════');
+
+      final printData = await context.read<CashierCubit>().getPrintData(
+        invoice.id,
+      );
+
+      if (printData == null) {
+        throw Exception('فشل في جلب بيانات الطباعة من API');
+      }
+
+      print('✅ Print data received from API');
+      print('   Order ID: ${printData['order_id']}');
+      print('   Invoice Number: ${printData['invoice_number']}');
+
+      // ═══ STEP 3: CREATE INVOICE DATA ═══
+      final settingsService = SettingsService();
+      final settings = await settingsService.loadSettings();
+
+      final invoiceData = InvoiceDataMapper.fromApiPrintData(
+        printData,
+        branchName: _branchNameController.text,
+        businessName: settings.businessName,
+        businessAddress: settings.address,
+        businessPhone: settings.phoneNumber,
+        taxNumber: settings.taxNumber.isEmpty ? null : settings.taxNumber,
+        logoPath: 'assets/images/logo.png',
+      );
+
+      print('✅ InvoiceData created');
+
+      // ═══ STEP 4: NAVIGATE TO PREVIEW SCREEN ═══
+      print('═══════════════════════════════════════════');
+      print('STEP 3: OPENING PREVIEW SCREEN');
+      print('═══════════════════════════════════════════');
+
+      if (!mounted) return;
+
+      // Get paper size from printer settings and convert to ESC/POS enum
+      final printerService = PrinterService();
+      final settingsPaperSize = printerService.settings.paperSize;
+
+      // Convert from models.PaperSize to esc_pos.PaperSize
+      final escPosPaperSize = _convertToEscPosPaperSize(settingsPaperSize);
+
+      // Navigate to preview screen (user will confirm printing there)
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => ThermalPreviewScreen(
+            invoiceData: invoiceData,
+            paperSize: escPosPaperSize,
+          ),
         ),
       );
-    }
-  } catch (e) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('❌ خطأ: $e'), backgroundColor: Colors.red),
-      );
-    }
-  } finally {
-    if (mounted) {
-      setState(() => _isSaving = false);
+
+      print('✅ Returned from preview screen');
+
+      // ═══ STEP 5: CLOSE INVOICE PAGE ═══
+      // After returning from preview (whether printed or not), close invoice page
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+    } catch (e, stackTrace) {
+      print('❌ Error in save & print workflow: $e');
+      print('Stack trace: $stackTrace');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ خطأ: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
-}
 
+  // ════════════════════════════════════════════════════════════════════════════
+  // OLD PRINT METHOD (DEPRECATED - KEPT FOR REFERENCE)
+  // ════════════════════════════════════════════════════════════════════════════
+  // This method is replaced by the new production-grade workflow in _handleSaveAndPrint
+  // which navigates to ThermalPreviewScreen for user confirmation before printing.
+  // ════════════════════════════════════════════════════════════════════════════
 
+  /*
   /// Print invoice using data from API
   /// Returns true if thermal (direct) print was used, false if PDF dialog was shown
   Future<bool> _handlePrintWithApiData(Map<String, dynamic> printData) async {
@@ -597,6 +674,7 @@ Future<void> _handleSaveAndPrint() async {
       rethrow;
     }
   }
+  */
 
   // Date and Time Picker
   Future<void> _selectServiceDateTime() async {
@@ -679,12 +757,14 @@ Future<void> _handleSaveAndPrint() async {
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                        ),
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.visibility_outlined),
-                label: Text(_isSaving ? "جاري الحفظ والمعاينة..." : "حفظ ومعاينة الفاتورة"),
+                label: Text(
+                  _isSaving
+                      ? "جاري الحفظ والمعاينة..."
+                      : "حفظ ومعاينة الفاتورة",
+                ),
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 50),
                   foregroundColor: theme.primaryColor,

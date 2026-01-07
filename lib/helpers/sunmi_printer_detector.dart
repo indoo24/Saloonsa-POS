@@ -3,11 +3,11 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:logger/logger.dart';
 
 /// Sunmi Printer Detector
-/// 
+///
 /// Detects if the current device is a Sunmi POS device (specifically Sunmi V2).
 /// Sunmi devices have built-in thermal printers that DO NOT support Arabic
 /// text via ESC/POS encoding (CP1256/CP864), but DO support bitmap/raster printing.
-/// 
+///
 /// This detector helps us route to image-based printing for Sunmi devices
 /// while using text-based ESC/POS for other thermal printers.
 class SunmiPrinterDetector {
@@ -32,17 +32,9 @@ class SunmiPrinterDetector {
     'D2s',
   ];
 
-  static const List<String> _sunmiManufacturers = [
-    'SUNMI',
-    'Sunmi',
-    'sunmi',
-  ];
+  static const List<String> _sunmiManufacturers = ['SUNMI', 'Sunmi', 'sunmi'];
 
-  static const List<String> _sunmiBrands = [
-    'SUNMI',
-    'Sunmi',
-    'sunmi',
-  ];
+  static const List<String> _sunmiBrands = ['SUNMI', 'Sunmi', 'sunmi'];
 
   /// Check if the current device is a Sunmi POS device
   /// Returns true if Sunmi is detected, false otherwise
@@ -56,7 +48,7 @@ class SunmiPrinterDetector {
 
       // Get Android device info
       final androidInfo = await _deviceInfo.androidInfo;
-      
+
       final model = androidInfo.model;
       final manufacturer = androidInfo.manufacturer;
       final brand = androidInfo.brand;
@@ -71,21 +63,30 @@ class SunmiPrinterDetector {
       _logger.i('  - Device: $device');
 
       // Check if any identifier matches Sunmi
-      final isSunmi = _matchesSunmi(model) || 
-                      _matchesSunmi(manufacturer) || 
-                      _matchesSunmi(brand) ||
-                      _matchesSunmi(product) ||
-                      _matchesSunmi(device);
+      final isSunmi =
+          _matchesSunmi(model) ||
+          _matchesSunmi(manufacturer) ||
+          _matchesSunmi(brand) ||
+          _matchesSunmi(product) ||
+          _matchesSunmi(device);
 
       if (isSunmi) {
-        _logger.i('[PRINT] ✅ Sunmi printer detected! Will use image-based printing for Arabic.');
+        _logger.i(
+          '[PRINT] ✅ Sunmi printer detected! Will use image-based printing for Arabic.',
+        );
       } else {
-        _logger.i('[PRINT] ℹ️ Non-Sunmi device. Will use text-based ESC/POS printing.');
+        _logger.i(
+          '[PRINT] ℹ️ Non-Sunmi device. Will use text-based ESC/POS printing.',
+        );
       }
 
       return isSunmi;
     } catch (e, stackTrace) {
-      _logger.w('[PRINT] Failed to detect Sunmi device: $e', error: e, stackTrace: stackTrace);
+      _logger.w(
+        '[PRINT] Failed to detect Sunmi device: $e',
+        error: e,
+        stackTrace: stackTrace,
+      );
       // Default to false (use text-based printing) if detection fails
       return false;
     }
@@ -126,7 +127,9 @@ class SunmiPrinterDetector {
   static void setForceOverride(bool? value) {
     _forceOverride = value;
     if (value != null) {
-      _logger.w('[PRINT] ⚠️ Sunmi detection OVERRIDE: $value (for testing only)');
+      _logger.w(
+        '[PRINT] ⚠️ Sunmi detection OVERRIDE: $value (for testing only)',
+      );
     }
   }
 

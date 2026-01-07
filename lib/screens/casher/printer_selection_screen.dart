@@ -6,6 +6,7 @@ import '../../cubits/printer/printer_state.dart';
 import '../../services/permission_service.dart';
 import 'models/printer_device.dart';
 import 'package:toastification/toastification.dart';
+import '../../helpers/validation_guard_mixin.dart';
 
 /// Printer selection and management screen
 class PrinterSelectionScreen extends StatefulWidget {
@@ -16,7 +17,7 @@ class PrinterSelectionScreen extends StatefulWidget {
 }
 
 class _PrinterSelectionScreenState extends State<PrinterSelectionScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, ValidationGuardMixin {
   late TabController _tabController;
   PrinterConnectionType _selectedType = PrinterConnectionType.wifi;
 
@@ -40,28 +41,12 @@ class _PrinterSelectionScreenState extends State<PrinterSelectionScreen>
   }
 
   Future<void> _scanPrinters() async {
-    // If scanning Bluetooth, request permissions first
-    if (_selectedType == PrinterConnectionType.bluetooth) {
-      final result = await context.read<PrinterCubit>().requestBluetoothPermissions();
+    // Validate environment before scanning
+    final isValid = await validateBeforePrinterOperation(
+      operationName: 'scan for printers',
+    );
 
-      if (result == PermissionResult.permanentlyDenied) {
-        // Show dialog to open settings
-        if (!mounted) return;
-        _showPermissionDeniedDialog();
-        return;
-      } else if (result == PermissionResult.denied) {
-        // Show error message
-        if (!mounted) return;
-        toastification.show(
-          context: context,
-          title: const Text('يجب منح صلاحيات البلوتوث'),
-          description: const Text('الصلاحيات مطلوبة للبحث عن الطابعات'),
-          type: ToastificationType.warning,
-          autoCloseDuration: const Duration(seconds: 3),
-        );
-        return;
-      }
-    }
+    if (!isValid) return;
 
     // Proceed with scanning
     if (!mounted) return;
@@ -91,6 +76,117 @@ class _PrinterSelectionScreenState extends State<PrinterSelectionScreen>
               openAppSettings();
             },
             child: const Text('فتح الإعدادات'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showBluetoothPairingGuidance() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.bluetooth_disabled, color: Colors.orange),
+            SizedBox(width: 12),
+            Text('لم يتم العثور على طابعات مقترنة'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'لم يتم العثور على طابعات بلوتوث مقترنة مع هذا الجهاز.',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'لإعداد طابعة بلوتوث:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 12),
+              _buildStep('1', 'شغّل الطابعة الحرارية'),
+              _buildStep('2', 'افتح إعدادات الأندرويد'),
+              _buildStep('3', 'انتقل إلى البلوتوث'),
+              _buildStep('4', 'اضغط "البحث عن أجهزة جديدة"'),
+              _buildStep('5', 'اختر طابعتك من القائمة'),
+              _buildStep('6', 'أدخل رمز PIN (عادة: 0000 أو 1234)'),
+              _buildStep('7', 'ارجع لهذا التطبيق واضغط "بحث عن طابعات"'),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'ملاحظة: الطابعات الحرارية تستخدم Bluetooth Classic، ليس BLE. يجب إقرانها في إعدادات النظام أولاً.',
+                        style: TextStyle(fontSize: 12, color: Colors.blue),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              openAppSettings();
+            },
+            icon: const Icon(Icons.settings_bluetooth),
+            label: const Text('فتح إعدادات البلوتوث'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStep(String number, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: Colors.blue,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                number,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(text),
+            ),
           ),
         ],
       ),
@@ -139,12 +235,13 @@ class _PrinterSelectionScreenState extends State<PrinterSelectionScreen>
             // Show detailed error message
             // Check if it's a critical error that needs a dialog
             final message = state.message;
-            final isCriticalError = message.contains('مطلوبة') || 
-                                   message.contains('مغلق') ||
-                                   message.contains('غير مدعوم') ||
-                                   message.contains('يجب') ||
-                                   message.length > 100;
-            
+            final isCriticalError =
+                message.contains('مطلوبة') ||
+                message.contains('مغلق') ||
+                message.contains('غير مدعوم') ||
+                message.contains('يجب') ||
+                message.length > 100;
+
             if (isCriticalError) {
               // Show dialog for critical errors with detailed explanation
               toastification.show(
@@ -165,21 +262,26 @@ class _PrinterSelectionScreenState extends State<PrinterSelectionScreen>
             }
           } else if (state is PrintersFound && state.devices.isEmpty) {
             // Show helpful message when no devices found
-            final typeArabic = state.type == PrinterConnectionType.bluetooth
-                ? 'بلوتوث'
-                : state.type == PrinterConnectionType.wifi
-                    ? 'شبكة'
-                    : 'USB';
-            
-            toastification.show(
-              context: context,
-              title: Text('لم يتم العثور على طابعات $typeArabic'),
-              description: state.type == PrinterConnectionType.bluetooth
-                  ? const Text('تأكد من أن الطابعة مشغلة ومقترنة مع الجهاز')
-                  : const Text('تأكد من أن الطابعة مشغلة ومتصلة بالشبكة'),
-              type: ToastificationType.warning,
-              autoCloseDuration: const Duration(seconds: 4),
-            );
+            if (state.type == PrinterConnectionType.bluetooth) {
+              // Show comprehensive Bluetooth pairing guidance
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _showBluetoothPairingGuidance();
+              });
+            } else {
+              final typeArabic = state.type == PrinterConnectionType.wifi
+                  ? 'شبكة'
+                  : 'USB';
+
+              toastification.show(
+                context: context,
+                title: Text('لم يتم العثور على طابعات $typeArabic'),
+                description: const Text(
+                  'تأكد من أن الطابعة مشغلة ومتصلة بالشبكة',
+                ),
+                type: ToastificationType.warning,
+                autoCloseDuration: const Duration(seconds: 4),
+              );
+            }
           } else if (state is PrinterDisconnected) {
             toastification.show(
               context: context,
@@ -281,6 +383,11 @@ class _PrinterSelectionScreenState extends State<PrinterSelectionScreen>
             CircularProgressIndicator(),
             SizedBox(height: 16),
             Text('جاري البحث عن الطابعات...'),
+            SizedBox(height: 8),
+            Text(
+              'يتم البحث عن الطابعات المدمجة والمقترنة...',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
           ],
         ),
       );
@@ -288,6 +395,11 @@ class _PrinterSelectionScreenState extends State<PrinterSelectionScreen>
 
     if (state is PrintersFound) {
       if (state.devices.isEmpty) {
+        // Show helpful guidance based on connection type
+        if (state.type == PrinterConnectionType.bluetooth) {
+          return _buildNoBluetoothPrintersView();
+        }
+
         return Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -308,35 +420,66 @@ class _PrinterSelectionScreenState extends State<PrinterSelectionScreen>
         );
       }
 
-      return ListView.builder(
-        itemCount: state.devices.length,
+      // Group printers by source type
+      final builtInPrinters = state.devices
+          .where((d) => d.sourceType == PrinterSourceType.builtIn)
+          .toList();
+      final pairedPrinters = state.devices
+          .where((d) => d.sourceType == PrinterSourceType.paired)
+          .toList();
+      final discoveredPrinters = state.devices
+          .where((d) => d.sourceType == PrinterSourceType.discovered)
+          .toList();
+      final unknownPrinters = state.devices
+          .where((d) => d.sourceType == PrinterSourceType.unknown)
+          .toList();
+
+      return ListView(
         padding: const EdgeInsets.all(16),
-        itemBuilder: (context, index) {
-          final device = state.devices[index];
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: _getConnectionColor(
-                  device.type,
-                ).withOpacity(0.2),
-                child: Icon(
-                  _getConnectionIcon(device.type),
-                  color: _getConnectionColor(device.type),
-                ),
-              ),
-              title: Text(
-                device.name,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              subtitle: Text(device.address ?? 'لا يوجد عنوان'),
-              trailing: ElevatedButton(
-                onPressed: () => _connectToPrinter(device),
-                child: const Text('اتصال'),
-              ),
+        children: [
+          // Built-in printers section
+          if (builtInPrinters.isNotEmpty) ...[
+            _buildSectionHeader(
+              'طابعات مدمجة',
+              Icons.phone_android,
+              Colors.green,
+              'Built-in',
             ),
-          );
-        },
+            ...builtInPrinters.map((device) => _buildPrinterCard(device)),
+            const SizedBox(height: 16),
+          ],
+
+          // Paired printers section
+          if (pairedPrinters.isNotEmpty) ...[
+            _buildSectionHeader(
+              'طابعات مقترنة',
+              Icons.bluetooth_connected,
+              Colors.blue,
+              'Paired',
+            ),
+            ...pairedPrinters.map((device) => _buildPrinterCard(device)),
+            const SizedBox(height: 16),
+          ],
+
+          // Discovered printers section
+          if (discoveredPrinters.isNotEmpty) ...[
+            _buildSectionHeader(
+              'طابعات جديدة',
+              Icons.bluetooth_searching,
+              Colors.orange,
+              'New - Requires Pairing',
+            ),
+            ...discoveredPrinters.map(
+              (device) => _buildPrinterCard(device, isNew: true),
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Unknown/Legacy printers
+          if (unknownPrinters.isNotEmpty) ...[
+            ...unknownPrinters.map((device) => _buildPrinterCard(device)),
+          ],
+        ],
       );
     }
 
@@ -366,6 +509,210 @@ class _PrinterSelectionScreenState extends State<PrinterSelectionScreen>
         ],
       ),
     );
+  }
+
+  /// Build a view for when no Bluetooth printers are found
+  Widget _buildNoBluetoothPrintersView() {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.bluetooth_disabled, size: 64, color: Colors.orange[400]),
+            const SizedBox(height: 16),
+            const Text(
+              'لم يتم العثور على طابعات بلوتوث',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'لإضافة طابعة، يرجى إقرانها في إعدادات الجهاز أولاً',
+              style: TextStyle(color: Colors.grey[600]),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'كيفية إقران الطابعة:',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _buildStep('1', 'شغّل الطابعة الحرارية'),
+                  _buildStep('2', 'افتح إعدادات البلوتوث في الأندرويد'),
+                  _buildStep('3', 'اضغط "إقران جهاز جديد"'),
+                  _buildStep('4', 'اختر الطابعة من القائمة'),
+                  _buildStep('5', 'عد إلى التطبيق واضغط "بحث عن طابعات"'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () => openAppSettings(),
+              icon: const Icon(Icons.settings_bluetooth),
+              label: const Text('فتح إعدادات البلوتوث'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Build a section header for printer groups
+  Widget _buildSectionHeader(
+    String title,
+    IconData icon,
+    Color color,
+    String subtitle,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                    color: color,
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build a printer card with source label
+  Widget _buildPrinterCard(PrinterDevice device, {bool isNew = false}) {
+    final sourceColor = _getSourceColor(device.sourceType);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: isNew
+            ? BorderSide(color: Colors.orange.shade300, width: 1)
+            : BorderSide.none,
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        leading: Stack(
+          children: [
+            CircleAvatar(
+              backgroundColor: _getConnectionColor(
+                device.type,
+              ).withOpacity(0.2),
+              child: Icon(
+                _getConnectionIcon(device.type),
+                color: _getConnectionColor(device.type),
+              ),
+            ),
+            if (device.sourceType != PrinterSourceType.unknown)
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: sourceColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                device.name,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (device.sourceLabel.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: sourceColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  device.sourceLabel,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: sourceColor,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        subtitle: Text(
+          device.address ?? 'لا يوجد عنوان',
+          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+        ),
+        trailing: isNew
+            ? OutlinedButton(
+                onPressed: () {
+                  // For new devices, open Bluetooth settings to pair first
+                  openAppSettings();
+                },
+                child: const Text('إقران'),
+              )
+            : ElevatedButton(
+                onPressed: () => _connectToPrinter(device),
+                child: const Text('اتصال'),
+              ),
+      ),
+    );
+  }
+
+  /// Get color for printer source type
+  Color _getSourceColor(PrinterSourceType sourceType) {
+    switch (sourceType) {
+      case PrinterSourceType.builtIn:
+        return Colors.green;
+      case PrinterSourceType.paired:
+        return Colors.blue;
+      case PrinterSourceType.discovered:
+        return Colors.orange;
+      case PrinterSourceType.unknown:
+        return Colors.grey;
+    }
   }
 
   IconData _getConnectionIcon(PrinterConnectionType type) {

@@ -4,22 +4,22 @@ import 'package:flutter/rendering.dart';
 import 'package:logger/logger.dart';
 
 /// Widget to Image Renderer Utility
-/// 
+///
 /// Converts a Flutter widget to a ui.Image off-screen (without displaying it).
 /// This is used for image-based thermal printing where Arabic text cannot be
 /// rendered via ESC/POS text commands on printers like Sunmi V2.
-/// 
+///
 /// The widget is rendered in a RepaintBoundary with specified dimensions,
 /// then captured as a bitmap image.
 class WidgetToImageRenderer {
   static final Logger _logger = Logger();
 
   /// Render a widget to a ui.Image off-screen
-  /// 
+  ///
   /// [widget] - The widget to render (e.g., ThermalReceiptImageWidget)
   /// [widthPx] - The width in pixels (e.g., 384 for Sunmi V2)
   /// [pixelRatio] - The pixel ratio for rendering (default: 3.0 for high quality on thermal)
-  /// 
+  ///
   /// Returns a ui.Image that can be converted to bytes and sent to printer
   static Future<ui.Image> renderWidgetToImage(
     Widget widget, {
@@ -28,7 +28,9 @@ class WidgetToImageRenderer {
   }) async {
     try {
       _logger.i('[PRINT] Starting off-screen widget rendering');
-      _logger.d('[PRINT] Render dimensions: width=${widthPx}px, pixelRatio=$pixelRatio');
+      _logger.d(
+        '[PRINT] Render dimensions: width=${widthPx}px, pixelRatio=$pixelRatio',
+      );
 
       // Create a RepaintBoundary to capture the widget
       final repaintBoundary = RenderRepaintBoundary();
@@ -58,7 +60,10 @@ class WidgetToImageRenderer {
           child: MediaQuery(
             data: MediaQueryData(
               devicePixelRatio: pixelRatio,
-              size: Size(widthPx / pixelRatio, 10000), // Large height for dynamic content
+              size: Size(
+                widthPx / pixelRatio,
+                10000,
+              ), // Large height for dynamic content
             ),
             child: Material(
               color: Colors.white,
@@ -90,14 +95,20 @@ class WidgetToImageRenderer {
       // Capture the image from the RepaintBoundary
       final image = await repaintBoundary.toImage(pixelRatio: pixelRatio);
 
-      _logger.i('[PRINT] Image captured successfully: ${image.width}x${image.height}px');
+      _logger.i(
+        '[PRINT] Image captured successfully: ${image.width}x${image.height}px',
+      );
 
       // Clean up
       buildOwner.finalizeTree();
 
       return image;
     } catch (e, stackTrace) {
-      _logger.e('[PRINT] Failed to render widget to image', error: e, stackTrace: stackTrace);
+      _logger.e(
+        '[PRINT] Failed to render widget to image',
+        error: e,
+        stackTrace: stackTrace,
+      );
       rethrow;
     }
   }
@@ -130,7 +141,11 @@ class WidgetToImageRenderer {
 
       return image;
     } catch (e, stackTrace) {
-      _logger.e('[PRINT] Failed to capture image from key', error: e, stackTrace: stackTrace);
+      _logger.e(
+        '[PRINT] Failed to capture image from key',
+        error: e,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
@@ -151,7 +166,11 @@ class WidgetToImageRenderer {
 
       return bytes;
     } catch (e, stackTrace) {
-      _logger.e('[PRINT] Failed to convert image to bytes', error: e, stackTrace: stackTrace);
+      _logger.e(
+        '[PRINT] Failed to convert image to bytes',
+        error: e,
+        stackTrace: stackTrace,
+      );
       rethrow;
     }
   }

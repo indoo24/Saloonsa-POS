@@ -3,83 +3,142 @@ import 'package:logger/logger.dart';
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:image/image.dart' as img;
 import '../models/invoice_data.dart';
-import '../widgets/thermal_receipt_image_widget.dart';
+import '../widgets/thermal_receipt_widget.dart';
 import '../helpers/widget_to_image_renderer.dart';
+import 'escpos_raster_generator.dart';
 
 /// Image-Based Thermal Printer
-/// 
-/// Prints thermal receipts as bitmap/raster images instead of ESC/POS text.
-/// This is specifically designed for Sunmi V2 and other printers that
-/// DO NOT support Arabic text encoding (CP1256/CP864) but DO support
-/// bitmap printing.
-/// 
-/// Process:
-/// 1. Render InvoiceData as a Flutter widget (ThermalReceiptImageWidget)
-/// 2. Convert widget to ui.Image off-screen
-/// 3. Convert ui.Image to img.Image (from image package)
-/// 4. Use ESC/POS imageRaster() to print the bitmap
-/// 
-/// This ensures Arabic text prints perfectly as part of the image.
+///
+/// UNIVERSAL thermal receipt printing using bitmap/raster images.
+/// This is the ONLY thermal printing method used in this application.
+///
+/// WHY IMAGE-BASED PRINTING:
+/// - ✅ Arabic text renders perfectly (no encoding issues)
+/// - ✅ Works on ALL thermal printer brands (Sunmi, Xprinter, Rongta, Gprinter, etc.)
+/// - ✅ No dependency on printer firmware or character sets
+/// - ✅ No CP864/CP1256/charset_converter needed
+/// - ✅ Predictable, stable, production-ready
+///
+/// ESC/POS RASTER PROCESS (GS v 0):
+/// 1. Render InvoiceData as a Flutter widget (ThermalReceiptWidget - THE SINGLE SOURCE OF TRUTH)
+/// 2. Convert widget to ui.Image at EXACT printer pixel width (384px or 576px)
+/// 3. Convert to 1-bit monochrome bitmap (thermal printer format)
+/// 4. Generate GS v 0 raster command with proper header and data
+/// 5. Send to printer via Bluetooth/WiFi
+///
+/// This treats thermal printers as "dumb image printers" - the most reliable POS strategy.
+///
+/// COMPATIBILITY:
+/// - RawBT (Android Bluetooth printing service)
+/// - Generic Bluetooth thermal printers
+/// - WiFi thermal printers
+/// - Sunmi built-in printers (optional SDK, but ESC/POS works too)
 class ImageBasedThermalPrinter {
   static final Logger _logger = Logger();
 
-  /// Sunmi V2 specifications
-  static const double _sunmiWidthPx = 384.0; // 384px for 58mm paper
-  static const double _pixelRatio = 3.0; // High quality for thermal printing
-  static const PaperSize _paperSize = PaperSize.mm58;
-
-  /// Generate thermal receipt as image-based ESC/POS bytes
-  /// 
+  /// Generate thermal receipt as ESC/POS raster bytes (GS v 0)
+  ///
   /// [data] - The invoice data to print
-  /// [paperSize] - Paper size (default: 58mm for Sunmi V2)
-  /// 
+  /// [paperSize] - Paper size (58mm or 80mm)
+  ///
   /// Returns ESC/POS bytes ready to send to printer
   static Future<List<int>> generateImageBasedReceipt(
     InvoiceData data, {
-    PaperSize paperSize = _paperSize,
+    PaperSize paperSize = PaperSize.mm58,
   }) async {
     try {
       _logger.i('[PRINT] ═══════════════════════════════════════════');
-      _logger.i('[PRINT] Starting IMAGE-BASED thermal receipt generation');
-      _logger.i('[PRINT] This method renders Arabic as bitmap image');
+      _logger.i('[PRINT] 🖨️ ESC/POS RASTER IMAGE PRINTING');
+      _logger.i(
+        '[PRINT] Paper: ${paperSize == PaperSize.mm58 ? "58mm (384px)" : "80mm (576px)"}',
+      );
       _logger.i('[PRINT] ═══════════════════════════════════════════');
+
+      // Determine width based on paper size
+      final widthPx = paperSize == PaperSize.mm58
+          ? EscPosRasterGenerator.width58mm
+          : EscPosRasterGenerator.width80mm;
+
+      // Step 1: Create the receipt widget (THE SINGLE SOURCE OF TRUTH)
+      _logger.i('[PRINT] [1/2] Creating receipt widget from InvoiceData');
+      final receiptWidget = ThermalReceiptWidget(
+        data: data,
+        paperWidthPx: widthPx.toDouble(),
+      );
+
+      // Step 2: Generate ESC/POS raster bytes using our generator
+      _logger.i('[PRINT] [2/2] Generating ESC/POS raster commands (GS v 0)');
+      final escposBytes = await EscPosRasterGenerator.generateFromWidget(
+        receiptWidget,
+        paperWidth: widthPx,
+      );
+
+      _logger.i('[PRINT] ═══════════════════════════════════════════');
+      _logger.i('[PRINT] ✅ ESC/POS generation complete');
+      _logger.i('[PRINT] Total bytes: ${escposBytes.length}');
+      _logger.i('[PRINT] Format: GS v 0 raster image');
+      _logger.i('[PRINT] ═══════════════════════════════════════════');
+
+      return escposBytes.toList();
+    } catch (e, stackTrace) {
+      _logger.e(
+        '[PRINT] ❌ Failed to generate image-based receipt',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    }
+  }
+
+  /// Legacy method: Generate receipt using esc_pos_utils_plus library
+  ///
+  /// This is the OLD approach that may not work with all printers.
+  /// Kept for compatibility testing only.
+  @Deprecated(
+    'Use generateImageBasedReceipt() with EscPosRasterGenerator instead',
+  )
+  static Future<List<int>> generateImageBasedReceiptLegacy(
+    InvoiceData data, {
+    PaperSize paperSize = PaperSize.mm58,
+  }) async {
+    try {
+      _logger.w('[PRINT] ⚠️ Using LEGACY esc_pos_utils_plus approach');
+      _logger.w('[PRINT] ⚠️ This may not work with RawBT/generic printers');
+
+      // Determine width based on paper size
+      final widthPx = paperSize == PaperSize.mm58
+          ? ThermalReceiptWidget.width58mm
+          : ThermalReceiptWidget.width80mm;
+
+      // Pixel ratio to simulate thermal DPI (203 DPI thermal / 96 DPI screen)
+      const pixelRatio = 203 / 96;
 
       // Step 1: Create the receipt widget
-      _logger.i('[PRINT] Step 1: Creating receipt widget from InvoiceData');
-      final receiptWidget = ThermalReceiptImageWidget(data: data);
-      _logger.i('[PRINT] ✅ Receipt widget created');
+      final receiptWidget = ThermalReceiptWidget(
+        data: data,
+        paperWidthPx: widthPx,
+      );
 
       // Step 2: Render widget to ui.Image
-      _logger.i('[PRINT] Step 2: Rendering widget to image (off-screen)');
-      _logger.d('[PRINT]   - Width: $_sunmiWidthPx px');
-      _logger.d('[PRINT]   - Pixel ratio: $_pixelRatio');
-      
       final uiImage = await WidgetToImageRenderer.renderWidgetToImage(
         receiptWidget,
-        widthPx: _sunmiWidthPx,
-        pixelRatio: _pixelRatio,
+        widthPx: widthPx,
+        pixelRatio: pixelRatio,
       );
-      
-      _logger.i('[PRINT] ✅ Image rendered: ${uiImage.width}x${uiImage.height}px');
 
       // Step 3: Convert ui.Image to img.Image (for ESC/POS)
-      _logger.i('[PRINT] Step 3: Converting Flutter image to ESC/POS format');
       final imgImage = await _convertUiImageToImgImage(uiImage);
-      _logger.i('[PRINT] ✅ Image converted: ${imgImage.width}x${imgImage.height}px');
 
-      // Step 4: Generate ESC/POS bytes with image raster
-      _logger.i('[PRINT] Step 4: Generating ESC/POS raster commands');
-      final bytes = await _generateEscPosBytes(imgImage, paperSize);
-      _logger.i('[PRINT] ✅ ESC/POS bytes generated: ${bytes.length} bytes');
-
-      _logger.i('[PRINT] ═══════════════════════════════════════════');
-      _logger.i('[PRINT] ✅ IMAGE-BASED receipt generation COMPLETE');
-      _logger.i('[PRINT] Ready to print ${bytes.length} bytes to thermal printer');
-      _logger.i('[PRINT] ═══════════════════════════════════════════');
+      // Step 4: Generate ESC/POS bytes with image raster (legacy)
+      final bytes = await _generateEscPosBytesLegacy(imgImage, paperSize);
 
       return bytes;
     } catch (e, stackTrace) {
-      _logger.e('[PRINT] ❌ Failed to generate image-based receipt', error: e, stackTrace: stackTrace);
+      _logger.e(
+        '[PRINT] ❌ Legacy method failed',
+        error: e,
+        stackTrace: stackTrace,
+      );
       rethrow;
     }
   }
@@ -88,7 +147,9 @@ class ImageBasedThermalPrinter {
   static Future<img.Image> _convertUiImageToImgImage(ui.Image uiImage) async {
     try {
       // Get the raw RGBA bytes from ui.Image
-      final byteData = await uiImage.toByteData(format: ui.ImageByteFormat.rawRgba);
+      final byteData = await uiImage.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
       if (byteData == null) {
         throw Exception('Failed to convert ui.Image to bytes');
       }
@@ -117,13 +178,20 @@ class ImageBasedThermalPrinter {
 
       return adjusted;
     } catch (e, stackTrace) {
-      _logger.e('[PRINT] Failed to convert ui.Image to img.Image', error: e, stackTrace: stackTrace);
+      _logger.e(
+        '[PRINT] Failed to convert ui.Image to img.Image',
+        error: e,
+        stackTrace: stackTrace,
+      );
       rethrow;
     }
   }
 
-  /// Generate ESC/POS bytes with image raster
-  static Future<List<int>> _generateEscPosBytes(
+  /// Generate ESC/POS bytes with image raster (LEGACY - uses esc_pos_utils_plus)
+  ///
+  /// This is kept for testing/comparison purposes only.
+  /// The new EscPosRasterGenerator is preferred.
+  static Future<List<int>> _generateEscPosBytesLegacy(
     img.Image image,
     PaperSize paperSize,
   ) async {
@@ -138,23 +206,20 @@ class ImageBasedThermalPrinter {
       bytes.addAll([0x1B, 0x40]); // ESC @ - Initialize
       bytes.addAll(generator.reset());
 
-      _logger.d('[PRINT] Added printer initialization');
-
       // Print image as raster
-      _logger.d('[PRINT] Adding image raster command');
       bytes.addAll(generator.imageRaster(image, align: PosAlign.center));
-
-      _logger.d('[PRINT] Image raster command added');
 
       // Feed paper and cut
       bytes.addAll(generator.feed(3));
       bytes.addAll(generator.cut());
 
-      _logger.d('[PRINT] Added feed and cut commands');
-
       return bytes;
     } catch (e, stackTrace) {
-      _logger.e('[PRINT] Failed to generate ESC/POS bytes', error: e, stackTrace: stackTrace);
+      _logger.e(
+        '[PRINT] Failed to generate ESC/POS bytes (legacy)',
+        error: e,
+        stackTrace: stackTrace,
+      );
       rethrow;
     }
   }
@@ -164,10 +229,12 @@ class ImageBasedThermalPrinter {
     try {
       final imgImage = await _convertUiImageToImgImage(uiImage);
       final pngBytes = img.encodePng(imgImage);
-      
+
       // In production, you would save to file system
       // For now, just log the size
-      _logger.d('[PRINT] Debug image would be saved as $filename (${pngBytes.length} bytes)');
+      _logger.d(
+        '[PRINT] Debug image would be saved as $filename (${pngBytes.length} bytes)',
+      );
     } catch (e) {
       _logger.w('[PRINT] Failed to save debug image: $e');
     }

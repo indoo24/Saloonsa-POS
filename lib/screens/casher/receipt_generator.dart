@@ -1,3 +1,18 @@
+// ============================================================================
+// ⚠️ DEPRECATED FILE - DO NOT USE
+// ============================================================================
+// This file uses TEXT-BASED ESC/POS printing with charset_converter.
+// It has Arabic encoding issues and printer-specific behavior.
+//
+// REPLACEMENT: Use ImageBasedThermalPrinter instead
+// Location: lib/services/image_based_thermal_printer.dart
+//
+// The new approach renders receipts as images, which:
+// - Works on ALL thermal printer brands
+// - Has NO Arabic encoding issues
+// - Is predictable and stable
+// ============================================================================
+
 import 'dart:typed_data';
 import 'dart:convert';
 import 'package:flutter/services.dart';
@@ -11,16 +26,9 @@ import '../../models/app_settings.dart';
 import '../../models/invoice_data.dart';
 import '../../services/settings_service.dart';
 
-/// Enhanced receipt generator that matches the reference image exactly
-/// This generates a professional tax invoice with:
-/// - Logo at top center
-/// - Store info (name, address, phone)
-/// - Title: "فاتورة ضريبية مبسطة"
-/// - Order info table with borders (Order#, Customer, Date, Cashier, Branch)
-/// - Items table with borders (Description, Price, Quantity, Total)
-/// - Totals section (Subtotal, Tax, Total)
-/// - Thank you message
-/// - QR code centered
+/// ⚠️ DEPRECATED: Use ImageBasedThermalPrinter instead
+/// This uses text-based ESC/POS with charset encoding issues
+@Deprecated('Use ImageBasedThermalPrinter for reliable Arabic printing')
 class ReceiptGenerator {
   static const int PAPER_WIDTH = 48; // 80mm paper = ~48 characters
   final SettingsService _settingsService = SettingsService();
@@ -95,8 +103,10 @@ class ReceiptGenerator {
   Future<List<int>> generateReceiptBytesFromInvoiceData({
     required InvoiceData data,
   }) async {
-    print('📄 Generating thermal receipt from InvoiceData (matches PDF format)');
-    
+    print(
+      '📄 Generating thermal receipt from InvoiceData (matches PDF format)',
+    );
+
     final profile = await CapabilityProfile.load();
     final generator = Generator(PaperSize.mm80, profile);
     List<int> bytes = [];
@@ -115,7 +125,9 @@ class ReceiptGenerator {
           if (image != null) {
             // Resize and center logo
             final resized = img.copyResize(image, width: 200);
-            bytes.addAll(generator.imageRaster(resized, align: PosAlign.center));
+            bytes.addAll(
+              generator.imageRaster(resized, align: PosAlign.center),
+            );
             await _addText(bytes, '', align: PosAlign.center); // Spacing
           }
         } catch (e) {
@@ -132,10 +144,10 @@ class ReceiptGenerator {
         height: PosTextSize.size2,
         width: PosTextSize.size2,
       );
-      
+
       await _addText(bytes, data.businessAddress, align: PosAlign.center);
       await _addText(bytes, data.businessPhone, align: PosAlign.center);
-      
+
       if (data.taxNumber != null && data.taxNumber!.isNotEmpty) {
         await _addText(
           bytes,
@@ -143,7 +155,7 @@ class ReceiptGenerator {
           align: PosAlign.center,
         );
       }
-      
+
       await _addText(bytes, '', align: PosAlign.center); // Spacing
 
       // 3. TITLE - "فاتورة ضريبية مبسطة"
@@ -161,12 +173,24 @@ class ReceiptGenerator {
       // 4. ORDER INFO TABLE
       final dateFormat = DateFormat('yyyy-MM-dd', 'ar');
       final timeFormat = DateFormat('HH:mm', 'ar');
-      
+
       await _addText(bytes, '┌────────────────────────────────┐');
-      await _addText(bytes, '│ رقم الفاتورة: ${_padArabic(data.orderNumber, 16)}│');
-      await _addText(bytes, '│ العميل: ${_padArabic(data.customerName ?? 'عميل كاش', 20)}│');
-      await _addText(bytes, '│ التاريخ: ${_padArabic(dateFormat.format(data.dateTime), 20)}│');
-      await _addText(bytes, '│ الوقت: ${_padArabic(timeFormat.format(data.dateTime), 22)}│');
+      await _addText(
+        bytes,
+        '│ رقم الفاتورة: ${_padArabic(data.orderNumber, 16)}│',
+      );
+      await _addText(
+        bytes,
+        '│ العميل: ${_padArabic(data.customerName ?? 'عميل كاش', 20)}│',
+      );
+      await _addText(
+        bytes,
+        '│ التاريخ: ${_padArabic(dateFormat.format(data.dateTime), 20)}│',
+      );
+      await _addText(
+        bytes,
+        '│ الوقت: ${_padArabic(timeFormat.format(data.dateTime), 22)}│',
+      );
       await _addText(bytes, '│ الكاشير: ${_padArabic(data.cashierName, 20)}│');
       await _addText(bytes, '│ الفرع: ${_padArabic(data.branchName, 22)}│');
       await _addText(bytes, '└────────────────────────────────┘');
@@ -188,13 +212,13 @@ class ReceiptGenerator {
         if (item.employeeName != null) {
           itemName += ' (${item.employeeName})';
         }
-        
+
         await _addText(bytes, '│ $itemName');
-        
+
         final priceStr = '${item.price.toStringAsFixed(2)} ر.س';
         final qtyStr = 'الكمية: ${item.quantity}';
         final totalStr = 'المجموع: ${item.total.toStringAsFixed(2)} ر.س';
-        
+
         await _addText(bytes, '│   $priceStr × $qtyStr');
         await _addText(bytes, '│   $totalStr');
         await _addText(bytes, '├────────────────────────────────┤');
@@ -207,7 +231,7 @@ class ReceiptGenerator {
         '│ المجموع الفرعي: ${data.subtotalBeforeTax.toStringAsFixed(2)} ر.س',
         align: PosAlign.right,
       );
-      
+
       if (data.hasDiscount) {
         await _addText(
           bytes,
@@ -220,7 +244,7 @@ class ReceiptGenerator {
           align: PosAlign.right,
         );
       }
-      
+
       await _addText(
         bytes,
         '│ ضريبة (${data.taxRate.toStringAsFixed(0)}%): ${data.taxAmount.toStringAsFixed(2)} ر.س',
@@ -234,11 +258,15 @@ class ReceiptGenerator {
         bold: true,
         height: PosTextSize.size2,
       );
-      
+
       if (data.hasPaymentInfo) {
         await _addText(bytes, '├────────────────────────────────┤');
-        await _addText(bytes, '│ طريقة الدفع: ${data.paymentMethod}', align: PosAlign.right);
-        
+        await _addText(
+          bytes,
+          '│ طريقة الدفع: ${data.paymentMethod}',
+          align: PosAlign.right,
+        );
+
         if (data.paidAmount != null) {
           await _addText(
             bytes,
@@ -246,7 +274,7 @@ class ReceiptGenerator {
             align: PosAlign.right,
           );
         }
-        
+
         if (data.hasRemaining) {
           final label = data.remainingAmount! > 0 ? 'المتبقي' : 'المرتجع';
           await _addText(
@@ -256,27 +284,25 @@ class ReceiptGenerator {
           );
         }
       }
-      
+
       await _addText(bytes, '└────────────────────────────────┘');
       await _addText(bytes, '', align: PosAlign.center); // Spacing
 
       // 8. THANK YOU MESSAGE
       if (data.invoiceNotes != null && data.invoiceNotes!.isNotEmpty) {
         await _addText(bytes, '┌────────────────────────────────┐');
-        await _addText(
-          bytes,
-          data.invoiceNotes!,
-          align: PosAlign.center,
-        );
+        await _addText(bytes, data.invoiceNotes!, align: PosAlign.center);
         await _addText(bytes, '└────────────────────────────────┘');
         await _addText(bytes, '', align: PosAlign.center); // Spacing
       }
 
       // 9. QR CODE
-      bytes.addAll(generator.qrcode(
-        'Invoice: ${data.orderNumber}, Total: ${data.grandTotal.toStringAsFixed(2)} SAR',
-        align: PosAlign.center,
-      ));
+      bytes.addAll(
+        generator.qrcode(
+          'Invoice: ${data.orderNumber}, Total: ${data.grandTotal.toStringAsFixed(2)} SAR',
+          align: PosAlign.center,
+        ),
+      );
 
       // Feed and cut
       bytes.addAll(generator.feed(2));
@@ -364,7 +390,7 @@ class ReceiptGenerator {
       // Initialize printer with ESC/POS commands
       bytes.addAll([0x1B, 0x40]); // ESC @ - Initialize printer
       bytes.addAll(generator.reset());
-      
+
       // 1. HEADER SECTION - Logo + Store Info (use settings)
       await _addHeader(generator, bytes, settings);
 

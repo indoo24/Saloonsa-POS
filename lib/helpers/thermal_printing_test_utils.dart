@@ -5,7 +5,7 @@ import 'package:barber_casher/widgets/thermal_receipt_image_widget.dart';
 import 'package:logger/logger.dart';
 
 /// Testing Utilities for Image-Based Thermal Printing
-/// 
+///
 /// Use these functions to test the image-based printing implementation
 /// without going through the full app flow.
 class ThermalPrintingTestUtils {
@@ -18,7 +18,7 @@ class ThermalPrintingTestUtils {
     _logger.i('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     final isSunmi = await SunmiPrinterDetector.isSunmiPrinter();
-    
+
     _logger.i('Result: ${isSunmi ? "SUNMI DEVICE" : "NON-SUNMI DEVICE"}');
     _logger.i('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   }
@@ -96,10 +96,12 @@ class ThermalPrintingTestUtils {
 
     try {
       final invoice = createSampleArabicInvoice();
-      
+
       _logger.i('Generating image-based receipt...');
-      final bytes = await ImageBasedThermalPrinter.generateImageBasedReceipt(invoice);
-      
+      final bytes = await ImageBasedThermalPrinter.generateImageBasedReceipt(
+        invoice,
+      );
+
       _logger.i('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       _logger.i('✅ SUCCESS: Generated ${bytes.length} bytes');
       _logger.i('Ready to send to printer!');

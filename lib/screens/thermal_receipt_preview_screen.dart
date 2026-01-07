@@ -3,10 +3,10 @@ import 'package:intl/intl.dart';
 import '../models/invoice_data.dart';
 
 /// Thermal Receipt Preview Screen
-/// 
+///
 /// This widget renders a visual preview matching the EXACT thermal receipt format.
 /// It simulates how the receipt will look when printed on thermal paper.
-/// 
+///
 /// IMPORTANT: This is a PREVIEW ONLY, not actual printing.
 /// - Matches thermal_receipt_generator.dart format exactly
 /// - Supports 58mm and 80mm paper widths
@@ -29,7 +29,7 @@ class ThermalReceiptPreviewScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('معاينة الفاتورة'),
@@ -48,10 +48,7 @@ class ThermalReceiptPreviewScreen extends StatelessWidget {
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(20),
-            child: _ThermalReceiptWidget(
-              data: data,
-              paperWidth: paperWidth,
-            ),
+            child: _ThermalReceiptWidget(data: data, paperWidth: paperWidth),
           ),
         ),
       ),
@@ -101,10 +98,7 @@ class _ThermalReceiptWidget extends StatelessWidget {
   final InvoiceData data;
   final PaperWidth paperWidth;
 
-  const _ThermalReceiptWidget({
-    required this.data,
-    required this.paperWidth,
-  });
+  const _ThermalReceiptWidget({required this.data, required this.paperWidth});
 
   @override
   Widget build(BuildContext context) {
@@ -197,20 +191,14 @@ class _ThermalReceiptWidget extends StatelessWidget {
         Text(
           data.businessAddress,
           textAlign: TextAlign.right,
-          style: const TextStyle(
-            fontSize: 11,
-            fontFamily: 'monospace',
-          ),
+          style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
         ),
 
         // Phone (right-aligned)
         Text(
           data.businessPhone,
           textAlign: TextAlign.right,
-          style: const TextStyle(
-            fontSize: 11,
-            fontFamily: 'monospace',
-          ),
+          style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
         ),
       ],
     );
@@ -294,23 +282,25 @@ class _ThermalReceiptWidget extends StatelessWidget {
           style: TextStyle(fontSize: 11, fontFamily: 'monospace'),
         ),
         _buildBoxLine('╞════════════════════════╪═══════════════════╡'),
-        
+
         // Service prices
-        ...data.items.map((item) => _buildFinancialRow(
-          item.name,
-          'ر.س ${item.price.toStringAsFixed(2)}',
-        )),
-        
+        ...data.items.map(
+          (item) => _buildFinancialRow(
+            item.name,
+            'ر.س ${item.price.toStringAsFixed(2)}',
+          ),
+        ),
+
         _buildBoxLine('├────────────────────────┼───────────────────┤'),
-        
+
         // Subtotal before discount
         _buildFinancialRow(
           'مجموع السلع قبل الخصم',
           'ر.س ${data.subtotalBeforeTax.toStringAsFixed(2)}',
         ),
-        
+
         _buildBoxLine('├────────────────────────┼───────────────────┤'),
-        
+
         // Discount (if any)
         if (data.hasDiscount) ...[
           _buildFinancialRow(
@@ -319,21 +309,21 @@ class _ThermalReceiptWidget extends StatelessWidget {
           ),
           _buildBoxLine('├────────────────────────┼───────────────────┤'),
         ],
-        
+
         // Amount after discount
         _buildFinancialRow(
           'المجموع',
           'ر.س ${data.amountAfterDiscount.toStringAsFixed(2)}',
         ),
-        
+
         _buildBoxLine('├────────────────────────┼───────────────────┤'),
-        
+
         // Tax
         _buildFinancialRow(
           'الضريبة ${data.taxRate.toStringAsFixed(0)}%',
           'ر.س ${data.taxAmount.toStringAsFixed(2)}',
         ),
-        
+
         _buildBoxLine('└────────────────────────┴───────────────────┘'),
       ],
     );
@@ -353,7 +343,7 @@ class _ThermalReceiptWidget extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        
+
         // Grand total box
         _buildBoxLine('┌────────────────────────────────────────────┐'),
         const Text(
@@ -369,9 +359,9 @@ class _ThermalReceiptWidget extends StatelessWidget {
           ),
         ),
         _buildBoxLine('└────────────────────────────────────────────┘'),
-        
+
         const SizedBox(height: 4),
-        
+
         // Payment method and amounts
         _buildBoxLine('┌────────────────────────────────────────────┐'),
         Text(
@@ -379,13 +369,13 @@ class _ThermalReceiptWidget extends StatelessWidget {
           style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
         ),
         _buildBoxLine('├────────────────────────────────────────────┤'),
-        
+
         if (data.paidAmount != null)
           Text(
             '│ الرصيد       ${_padLeft('ر.س ${data.paidAmount!.toStringAsFixed(2)}', 30)}│',
             style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
           ),
-        
+
         _buildBoxLine('└────────────────────────────────────────────┘'),
       ],
     );
@@ -414,10 +404,7 @@ class _ThermalReceiptWidget extends StatelessWidget {
 
   // Helper methods
   Widget _buildDivider() {
-    return Container(
-      height: 1,
-      color: Colors.black,
-    );
+    return Container(height: 1, color: Colors.black);
   }
 
   Widget _buildBoxLine(String line) {
@@ -464,7 +451,4 @@ class _ThermalReceiptWidget extends StatelessWidget {
 }
 
 /// Paper width enum for preview
-enum PaperWidth {
-  mm58,
-  mm80,
-}
+enum PaperWidth { mm58, mm80 }

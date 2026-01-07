@@ -1,30 +1,47 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- ✅ هنا تضيف التصاريح (قبل <application>) -->
-    <!-- صلاحية الاتصال بالإنترنت -->
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    <!-- PERMISSIONS -->
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    
+    <!-- Internet access for WiFi printers and API calls -->
     <uses-permission android:name="android.permission.INTERNET"/>
-
-    <!-- صلاحية الوصول للشبكة (مهمة للطابعات LAN/WiFi) -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
 
-    <!-- Bluetooth permissions for Android 11 and below -->
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    <!-- BLUETOOTH CLASSIC PERMISSIONS (for thermal printers) -->
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    
+    <!-- Android 8-11 (API 26-30): Legacy Bluetooth permissions -->
     <uses-permission android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30"/>
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30"/>
 
-    <!-- Bluetooth permissions for Android 12+ (API 31+) -->
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
-        android:usesPermissionFlags="neverForLocation"
-        tools:targetApi="s"/>
+    <!-- Android 12+ (API 31+): New Bluetooth permissions -->
+    <!-- BLUETOOTH_CONNECT: Required to access bonded devices and connect via RFCOMM/SPP -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    
+    <!-- BLUETOOTH_SCAN: Required to discover paired Bluetooth Classic devices -->
+    <!-- Even though we only scan bonded devices, this permission is still required -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    <!-- LOCATION PERMISSIONS (ONLY for Android 8-11) -->
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    <!-- CRITICAL: Location is NOT required on Android 12+ for Bluetooth Classic -->
+    <!-- We explicitly limit these permissions to maxSdkVersion="30" -->
+    <!-- On Android 12+, BLUETOOTH_SCAN with neverForLocation flag is sufficient -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"
+        android:maxSdkVersion="30"/>
 
-    <!-- Location permissions (required for Bluetooth device discovery on Android < 12) -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-
-    <!-- باقي الملف -->
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
+    <!-- APPLICATION -->
+    <!-- ═══════════════════════════════════════════════════════════════════════ -->
     <application
         android:label="صالون الشباب"
         android:name="${applicationName}"

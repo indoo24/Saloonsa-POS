@@ -10,8 +10,12 @@ import 'package:logger/logger.dart';
 // import 'package:usb_serial/usb_serial.dart';  // Disabled due to compatibility issues
 import '../models/printer_device.dart';
 import '../../../models/printer_settings.dart';
-import '../../../services/bluetooth_environment_service.dart';
+import '../../../models/invoice_data.dart';
+import '../../../services/bluetooth_classic_printer_service.dart';
 import '../../../services/printer_error_mapper.dart';
+import '../../../services/image_based_thermal_printer.dart';
+import '../../../services/thermal_pdf_test_service.dart';
+import '../../../services/unified_printer_discovery_service.dart';
 import 'dart:convert';
 
 /// Universal printer service supporting WiFi, Bluetooth, and USB
@@ -21,7 +25,10 @@ class PrinterService {
   PrinterService._internal();
 
   final Logger _logger = Logger();
-  final BluetoothEnvironmentService _environmentService = BluetoothEnvironmentService();
+  final BluetoothClassicPrinterService _bluetoothClassicService =
+      BluetoothClassicPrinterService();
+  final UnifiedPrinterDiscoveryService _unifiedDiscoveryService =
+      UnifiedPrinterDiscoveryService();
   final PrinterErrorMapper _errorMapper = PrinterErrorMapper();
 
   // Bluetooth printer instance
@@ -34,6 +41,26 @@ class PrinterService {
   // Printer settings (paper size, etc.)
   PrinterSettings _settings = const PrinterSettings();
   PrinterSettings get settings => _settings;
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 🧪 PDF TEST MODE FLAG
+  // ═══════════════════════════════════════════════════════════════════════════
+  // When enabled, printing calls will preview the thermal receipt as A4 PDF
+  // instead of sending to a real thermal printer.
+  //
+  // ✅ USE CASES:
+  // - Testing receipt layout without a thermal printer
+  // - Debugging Arabic text and RTL rendering
+  // - Validating spacing and alignment
+  // - Development on machines without printer access
+  //
+  // ⚠️ IMPORTANT:
+  // - This should be FALSE in production
+  // - This should be TRUE only for local testing/debugging
+  // - The PDF shows the EXACT same receipt as thermal printing
+  // - No ESC/POS commands are sent in test mode
+  // ═══════════════════════════════════════════════════════════════════════════
+  bool thermalPdfTestMode = false;
 
   // Network printer instance (for WiFi)
   NetworkPrinter? _networkPrinter;
@@ -116,118 +143,154 @@ class PrinterService {
     }
   }
 
-  /// Scan for Bluetooth printers with comprehensive pre-flight checks
-  /// Throws PrinterError with user-friendly messages on failure
+  /// Scan for Bluetooth printers using unified discovery flow
+  ///
+  /// UNIFIED DISCOVERY FLOW:
+  /// 1. ALWAYS shows built-in printers (Sunmi) immediately if device supports them
+  /// 2. ALWAYS shows ALL bonded (paired) Bluetooth Classic devices
+  /// 3. Optional discovery scan for NEW unpaired devices
+  /// 4. Handles Android version-specific permissions gracefully
+  ///
+  /// CRITICAL:
+  /// - NEVER relies on Bluetooth discovery scan alone
+  /// - ALWAYS displays bonded devices even if scan fails
+  /// - NEVER shows "No printers found" when bonded devices exist
+  ///
+  /// PRODUCTION FIX: Hard timeout of 5 seconds max
   Future<List<PrinterDevice>> scanBluetoothPrinters() async {
-    _logger.i('📡 Starting Bluetooth printer scan with pre-flight checks...');
+    _logger.i('📡 Starting unified Bluetooth printer discovery...');
 
     try {
-      // STEP 1: Perform pre-flight environment check
-      final envCheck = await _environmentService.performPreFlightCheck();
-      
-      if (!envCheck.isReady) {
-        _logger.w('⚠️ Pre-flight check failed: ${envCheck.missingRequirements}');
-        
-        // Throw the specific error from environment check
-        if (envCheck.error != null) {
-          throw _createPrinterErrorFromEnvError(envCheck.error!);
-        }
-        
-        // Fallback error
-        throw Exception('Environment not ready: ${envCheck.readableMessage}');
-      }
-
-      _logger.i('✅ Pre-flight check passed - Environment is ready');
-
-      // STEP 2: Perform the actual Bluetooth scan with timeout
-      final scannedDevices = await Future.any([
-        _performBluetoothScan(),
-        Future.delayed(const Duration(seconds: 10), () {
-          _logger.w('⏱️ Bluetooth scan timeout - no printers found within 10 seconds');
-          return <PrinterDevice>[];
-        }),
+      // Use unified discovery service for comprehensive printer discovery
+      final result = await Future.any([
+        _unifiedDiscoveryService.discoverAllPrinters(
+          includeDiscoveryScan: true,
+          filterThermalOnly:
+              false, // Show ALL bonded devices - don't filter aggressively
+        ),
+        Future.delayed(
+          const Duration(seconds: 5),
+          () => throw TimeoutException(
+            'Unified discovery timed out',
+            const Duration(seconds: 5),
+          ),
+        ),
       ]);
 
-      // STEP 3: Analyze results
-      if (scannedDevices.isEmpty) {
-        _logger.w('⚠️ No Bluetooth devices found');
-        // This is not an error - just no devices nearby
-        return scannedDevices;
+      // Log discovery results
+      _logger.i('📊 Unified discovery complete:');
+      _logger.i('   - Built-in: ${result.builtInPrinters.length}');
+      _logger.i('   - Paired: ${result.pairedPrinters.length}');
+      _logger.i('   - New: ${result.discoveredPrinters.length}');
+
+      // Check for permission issues
+      if (!result.permissionsGranted && result.builtInPrinters.isEmpty) {
+        throw PrinterError(
+          code: 'PERMISSIONS_REQUIRED',
+          technicalMessage:
+              result.permissionMessage ?? 'Bluetooth permissions required',
+          userMessage: result.permissionMessage ?? 'صلاحيات البلوتوث مطلوبة',
+          arabicTitle: 'صلاحيات مطلوبة',
+          arabicMessage:
+              result.permissionMessage ??
+              'يحتاج التطبيق صلاحيات البلوتوث للوصول إلى الطابعات.',
+          suggestions: [
+            'اضغط "السماح" عند ظهور طلب الصلاحيات',
+            'أو افتح إعدادات التطبيق وفعّل صلاحيات البلوتوث',
+          ],
+        );
       }
 
-      _logger.i('✅ Bluetooth scan completed successfully. Found ${scannedDevices.length} device(s)');
-      return scannedDevices;
-      
+      // Check for Bluetooth disabled
+      if (!result.bluetoothEnabled && result.builtInPrinters.isEmpty) {
+        throw PrinterError(
+          code: 'BLUETOOTH_DISABLED',
+          technicalMessage: 'Bluetooth is disabled',
+          userMessage: 'البلوتوث مغلق',
+          arabicTitle: 'البلوتوث مغلق',
+          arabicMessage: 'يرجى تشغيل البلوتوث من الإعدادات والمحاولة مرة أخرى.',
+          suggestions: [
+            'افتح إعدادات الجهاز',
+            'فعّل البلوتوث',
+            'عد إلى التطبيق واضغط "بحث عن طابعات"',
+          ],
+        );
+      }
+
+      // Return all discovered printers (built-in + paired + discovered)
+      final allPrinters = result.allPrinters;
+
+      if (allPrinters.isEmpty) {
+        _logger.w('⚠️ No printers found in unified discovery');
+        // Return empty list - UI will show helpful guidance
+      } else {
+        _logger.i(
+          '✅ Returning ${allPrinters.length} printer(s) from unified discovery',
+        );
+      }
+
+      return allPrinters;
+    } on TimeoutException catch (_) {
+      _logger.e('❌ Unified discovery timed out after 5 seconds');
+
+      // Even on timeout, try to get bonded devices directly as fallback
+      try {
+        final fallbackPrinters = await _getFallbackBondedDevices();
+        if (fallbackPrinters.isNotEmpty) {
+          _logger.i(
+            '✅ Fallback: Found ${fallbackPrinters.length} bonded device(s)',
+          );
+          return fallbackPrinters;
+        }
+      } catch (e) {
+        _logger.w('⚠️ Fallback also failed: $e');
+      }
+
+      throw PrinterError(
+        code: 'SCAN_TIMEOUT',
+        technicalMessage: 'Unified discovery timed out',
+        userMessage: 'انتهت مهلة البحث',
+        arabicTitle: 'انتهت مهلة البحث',
+        arabicMessage: 'انتهت مهلة البحث عن الطابعات. يرجى المحاولة مرة أخرى.',
+        suggestions: [
+          'تأكد من تفعيل البلوتوث',
+          'تأكد من إقران الطابعة في إعدادات الأندرويد',
+          'أعد تشغيل البلوتوث والمحاولة مرة أخرى',
+        ],
+      );
     } catch (e) {
-      _logger.e('❌ Bluetooth scan failed: $e');
-      
-      // Map the error to a user-friendly message
-      final printerError = _errorMapper.mapError(e, context: 'Bluetooth scan');
-      _logger.e('🔴 Mapped to: ${printerError.code} - ${printerError.arabicTitle}');
-      
-      // Re-throw the mapped error
+      _logger.e('❌ Unified discovery failed: $e');
+
+      // If it's already a PrinterError, rethrow
+      if (e is PrinterError) {
+        rethrow;
+      }
+
+      // Map unknown errors
+      final printerError = _errorMapper.mapError(
+        e,
+        context: 'Unified Bluetooth discovery',
+      );
       throw printerError;
     }
   }
 
-  /// Convert environment error to printer error
-  PrinterError _createPrinterErrorFromEnvError(BluetoothEnvironmentError envError) {
-    switch (envError.code) {
-      case 'BT_NOT_SUPPORTED':
-        return PrinterError.bluetoothNotSupported();
-      case 'BT_DISABLED':
-        return PrinterError.bluetoothDisabled();
-      case 'LOCATION_DISABLED':
-        return PrinterError.locationDisabled();
-      case 'PERMISSIONS_MISSING':
-        return PrinterError.permissionDenied();
-      default:
-        return PrinterError.unknown(envError.userMessage);
-    }
-  }
+  /// Fallback method to get bonded devices directly when unified discovery times out
+  Future<List<PrinterDevice>> _getFallbackBondedDevices() async {
+    _logger.i('🔄 Attempting fallback bonded device retrieval...');
 
-  /// Internal method to perform Bluetooth scan
-  Future<List<PrinterDevice>> _performBluetoothScan() async {
-    final devices = <PrinterDevice>[];
-
-    // Check if Bluetooth is available
-    final isAvailable = await _bluetoothPrinter.isAvailable;
-    if (isAvailable == null || !isAvailable) {
-      _logger.w('⚠️ Bluetooth is not available on this device');
-      throw Exception('Bluetooth is not available on this device');
-    }
-
-    // Check if Bluetooth is enabled
-    final isOn = await _bluetoothPrinter.isOn;
-    if (isOn == null || !isOn) {
-      _logger.w('⚠️ Bluetooth is not enabled. Please turn on Bluetooth');
-      throw Exception('Bluetooth is not enabled. Please turn on Bluetooth');
-    }
-
-    _logger.i('🔍 Searching for paired Bluetooth devices...');
-
-    // Get bonded (paired) devices
     final bondedDevices = await _bluetoothPrinter.getBondedDevices();
 
-    if (bondedDevices.isEmpty) {
-      _logger.w('⚠️ No paired Bluetooth devices found');
-      return devices;
-    }
-
-    _logger.i('📱 Found ${bondedDevices.length} paired Bluetooth device(s)');
-
-    for (var device in bondedDevices) {
-      final printerDevice = PrinterDevice(
-        id: 'bt_${device.address}',
-        name: device.name ?? 'Unknown Bluetooth Printer',
+    return bondedDevices.map((device) {
+      return PrinterDevice(
+        id: 'bt_classic_${device.address}',
+        name: device.name ?? 'Unknown Device',
         address: device.address,
         type: PrinterConnectionType.bluetooth,
+        isConnected: false,
+        sourceType: PrinterSourceType.paired,
       );
-      devices.add(printerDevice);
-      _logger.d('  - ${printerDevice.name} (${printerDevice.address})');
-    }
-
-    return devices;
+    }).toList();
   }
 
   /// Scan for USB printers (DISABLED - usb_serial package has compatibility issues)
@@ -310,11 +373,21 @@ class PrinterService {
     }
 
     try {
-      // STEP 1: Pre-flight check before connection
-      final envCheck = await _environmentService.performPreFlightCheck();
-      if (!envCheck.isReady) {
+      // STEP 1: Pre-flight check before connection using new Classic service
+      final classicCheck = await _bluetoothClassicService
+          .performPreFlightCheck();
+      if (!classicCheck.isReady) {
         _logger.w('⚠️ Environment not ready for connection');
-        throw _createPrinterErrorFromEnvError(envCheck.error!);
+        throw PrinterError(
+          code: classicCheck.errorCode ?? 'CONNECTION_FAILED',
+          technicalMessage: classicCheck.errorMessage ?? 'Connection failed',
+          userMessage: classicCheck.errorMessage ?? 'فشل الاتصال',
+          arabicTitle: 'فشل الاتصال',
+          arabicMessage: classicCheck.arabicMessage,
+          suggestions: classicCheck.userGuidance != null
+              ? [classicCheck.userGuidance!]
+              : [],
+        );
       }
 
       // STEP 2: Disconnect any existing connection first
@@ -339,12 +412,14 @@ class PrinterService {
 
         try {
           // Attempt connection with timeout
-          await _bluetoothPrinter.connect(btDevice).timeout(
-            _connectionTimeout,
-            onTimeout: () {
-              throw PrinterError.connectionTimeout();
-            },
-          );
+          await _bluetoothPrinter
+              .connect(btDevice)
+              .timeout(
+                _connectionTimeout,
+                onTimeout: () {
+                  throw PrinterError.connectionTimeout();
+                },
+              );
 
           // Small delay to let connection stabilize
           await Future.delayed(const Duration(milliseconds: 500));
@@ -364,7 +439,10 @@ class PrinterService {
           // If this was the last attempt, throw the error
           if (attempt > _maxRetries) {
             // Map the error to user-friendly message
-            final mappedError = _errorMapper.mapError(e, context: 'Bluetooth connection');
+            final mappedError = _errorMapper.mapError(
+              e,
+              context: 'Bluetooth connection',
+            );
             throw mappedError;
           }
 
@@ -385,7 +463,6 @@ class PrinterService {
 
       _logger.i('✅ Successfully connected to ${device.name}');
       return true;
-
     } catch (e) {
       _logger.e('❌ Bluetooth connection failed: $e');
 
@@ -395,7 +472,10 @@ class PrinterService {
       }
 
       // Otherwise, map it
-      final mappedError = _errorMapper.mapError(e, context: 'Bluetooth connection');
+      final mappedError = _errorMapper.mapError(
+        e,
+        context: 'Bluetooth connection',
+      );
       throw mappedError;
     }
   }
@@ -408,7 +488,9 @@ class PrinterService {
       if (isConnected == true) {
         _logger.i('🔌 Disconnecting from previous Bluetooth connection...');
         await _bluetoothPrinter.disconnect();
-        await Future.delayed(const Duration(milliseconds: 500)); // Give time to disconnect
+        await Future.delayed(
+          const Duration(milliseconds: 500),
+        ); // Give time to disconnect
         _logger.i('✅ Previous connection disconnected');
       }
     } catch (e) {
@@ -493,6 +575,98 @@ class PrinterService {
   // ============================================================================
   // PRINTING METHODS
   // ============================================================================
+
+  /// Print invoice directly from InvoiceData (IMAGE-BASED ONLY)
+  ///
+  /// This is the UNIFIED thermal printing method that:
+  /// 1. Renders the receipt as an image (supports Arabic perfectly)
+  /// 2. Sends raster image to printer
+  /// 3. Works on ALL thermal printer brands
+  ///
+  /// NO text encoding, NO charset converter, NO printer-specific logic.
+  ///
+  /// 🧪 TEST MODE:
+  /// If `thermalPdfTestMode` is enabled, this will preview the receipt as
+  /// an A4 PDF instead of printing to a thermal printer.
+  Future<bool> printInvoiceDirectFromData(InvoiceData data) async {
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 🧪 PDF TEST MODE ROUTING
+    // ═══════════════════════════════════════════════════════════════════════════
+    if (thermalPdfTestMode) {
+      _logger.i('[PDF TEST] ═══════════════════════════════════════════');
+      _logger.i('[PDF TEST] Test mode enabled - previewing as PDF');
+      _logger.i('[PDF TEST] ═══════════════════════════════════════════');
+
+      try {
+        // Convert ESC/POS paper size to thermal paper size enum
+        final testPaperSize = _settings.paperSize == esc_pos.PaperSize.mm58
+            ? ThermalPaperSize.mm58
+            : ThermalPaperSize.mm80;
+
+        // Preview receipt as PDF (reuses same thermal widget)
+        await ThermalPdfTestService.previewThermalReceiptAsPdf(
+          data,
+          paperSize: testPaperSize,
+          receiptName:
+              'thermal_receipt_test_${DateTime.now().millisecondsSinceEpoch}',
+        );
+
+        _logger.i('[PDF TEST] ═══════════════════════════════════════════');
+        _logger.i('[PDF TEST] PDF preview completed');
+        _logger.i('[PDF TEST] ═══════════════════════════════════════════');
+
+        return true;
+      } catch (e, stackTrace) {
+        _logger.e(
+          '[PDF TEST] ❌ Failed to preview PDF',
+          error: e,
+          stackTrace: stackTrace,
+        );
+        return false;
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // 🖨️ PRODUCTION THERMAL PRINTING
+    // ═══════════════════════════════════════════════════════════════════════════
+    _logger.i('[PRINT] ═══════════════════════════════════════════');
+    _logger.i('[PRINT] Rendering receipt as image');
+    _logger.i('[PRINT] ═══════════════════════════════════════════');
+
+    if (_connectedPrinter == null) {
+      _logger.e('[PRINT] ❌ No printer connected');
+      throw Exception('No printer connected');
+    }
+
+    try {
+      // Generate image-based receipt bytes
+      final bytes = await ImageBasedThermalPrinter.generateImageBasedReceipt(
+        data,
+        paperSize: _getEscPosPaperSize(),
+      );
+
+      _logger.i('[PRINT] Image rendered successfully');
+      _logger.i('[PRINT] Sending raster data to printer');
+
+      // Send to printer
+      final result = await printBytes(bytes);
+
+      if (result) {
+        _logger.i('[PRINT] ═══════════════════════════════════════════');
+        _logger.i('[PRINT] Thermal print completed');
+        _logger.i('[PRINT] ═══════════════════════════════════════════');
+      }
+
+      return result;
+    } catch (e, stackTrace) {
+      _logger.e(
+        '[PRINT] ❌ Failed to print invoice',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    }
+  }
 
   /// Print bytes to the connected printer
   /// ⚠️ CRITICAL: This method MUST complete transmission before returning

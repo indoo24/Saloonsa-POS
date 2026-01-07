@@ -7,6 +7,8 @@ import '../../models/invoice_data.dart';
 import '../thermal_receipt_preview_screen.dart';
 import 'models/printer_device.dart';
 import 'package:toastification/toastification.dart';
+import '../../helpers/system_settings_helper.dart';
+import '../../helpers/validation_guard_mixin.dart';
 
 /// Professional Printer Settings screen with full configuration options
 class PrinterSettingsScreen extends StatefulWidget {
@@ -17,7 +19,7 @@ class PrinterSettingsScreen extends StatefulWidget {
 }
 
 class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, ValidationGuardMixin {
   late TabController _tabController;
   PrinterConnectionType _selectedType = PrinterConnectionType.wifi;
   PaperSize _selectedPaperSize = PaperSize.mm80;
@@ -54,11 +56,25 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
     super.dispose();
   }
 
-  void _scanPrinters() {
+  void _scanPrinters() async {
+    // Validate environment before scanning
+    final isValid = await validateBeforePrinterOperation(
+      operationName: 'scan for printers',
+    );
+
+    if (!isValid) return;
+
     context.read<PrinterCubit>().scanPrinters(_selectedType);
   }
 
-  void _connectToPrinter(PrinterDevice device) {
+  void _connectToPrinter(PrinterDevice device) async {
+    // Validate environment before connecting
+    final isValid = await validateBeforePrinterOperation(
+      operationName: 'connect to printer',
+    );
+
+    if (!isValid) return;
+
     context.read<PrinterCubit>().connectToPrinter(device);
   }
 
@@ -86,6 +102,118 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
         autoCloseDuration: const Duration(seconds: 2),
       );
     }
+  }
+
+  void _showBluetoothPairingGuidance() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.bluetooth_disabled, color: Colors.orange),
+            SizedBox(width: 12),
+            Expanded(child: Text('لم يتم العثور على طابعات مقترنة')),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'لم يتم العثور على طابعات بلوتوث مقترنة مع هذا الجهاز.',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'لإعداد طابعة بلوتوث:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 12),
+              _buildStep('1', 'شغّل الطابعة الحرارية'),
+              _buildStep('2', 'افتح إعدادات الأندرويد'),
+              _buildStep('3', 'انتقل إلى البلوتوث'),
+              _buildStep('4', 'اضغط "البحث عن أجهزة جديدة"'),
+              _buildStep('5', 'اختر طابعتك من القائمة'),
+              _buildStep('6', 'أدخل رمز PIN (عادة: 0000 أو 1234)'),
+              _buildStep('7', 'ارجع لهذا التطبيق واضغط "بحث عن طابعات"'),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'ملاحظة: يجب إقران الطابعة عبر إعدادات البلوتوث في الجهاز قبل الاتصال بها من هذا التطبيق.',
+                        style: TextStyle(fontSize: 12, color: Colors.blue),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            ),
+            onPressed: () {
+              Navigator.pop(context);
+              SystemSettingsHelper.openBluetoothSettings();
+            },
+            icon: const Icon(Icons.settings_bluetooth),
+            label: const Text(
+              'فتح إعدادات البلوتوث',
+              style: TextStyle(fontSize: 14),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStep(String number, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: const BoxDecoration(
+              color: Colors.blue,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                number,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 14))),
+        ],
+      ),
+    );
   }
 
   void _showReceiptPreview() {
@@ -136,7 +264,9 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
             Navigator.pop(context);
             toastification.show(
               context: context,
-              title: const Text('هذا مجرد معاينة - يمكنك طباعة الفواتير الفعلية من شاشة الفاتورة'),
+              title: const Text(
+                'هذا مجرد معاينة - يمكنك طباعة الفواتير الفعلية من شاشة الفاتورة',
+              ),
               type: ToastificationType.info,
               autoCloseDuration: const Duration(seconds: 3),
             );
@@ -186,6 +316,13 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
               type: ToastificationType.success,
               autoCloseDuration: const Duration(seconds: 2),
             );
+          } else if (state is PrintersFound &&
+              state.devices.isEmpty &&
+              state.type == PrinterConnectionType.bluetooth) {
+            // Show Bluetooth pairing guidance when no printers found
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _showBluetoothPairingGuidance();
+            });
           }
         },
         builder: (context, state) {

@@ -27,14 +27,15 @@ class PrinterErrorMapper {
       return PrinterError.bluetoothDisabled();
     }
 
-    if (errorString.contains('location') && 
+    if (errorString.contains('location') &&
         (errorString.contains('disabled') || errorString.contains('off'))) {
       return PrinterError.locationDisabled();
     }
 
     // Permission errors
-    if (errorString.contains('permission') && 
-        (errorString.contains('denied') || errorString.contains('not granted'))) {
+    if (errorString.contains('permission') &&
+        (errorString.contains('denied') ||
+            errorString.contains('not granted'))) {
       return PrinterError.permissionDenied();
     }
 
@@ -50,8 +51,7 @@ class PrinterErrorMapper {
       return PrinterError.connectionRefused();
     }
 
-    if (errorString.contains('timeout') ||
-        errorString.contains('timed out')) {
+    if (errorString.contains('timeout') || errorString.contains('timed out')) {
       return PrinterError.connectionTimeout();
     }
 
@@ -82,7 +82,7 @@ class PrinterErrorMapper {
     }
 
     // Network errors (for WiFi printers)
-    if (errorString.contains('network') || 
+    if (errorString.contains('network') ||
         errorString.contains('unreachable')) {
       return PrinterError.networkUnreachable();
     }
@@ -128,7 +128,8 @@ class PrinterError {
       technicalMessage: 'Bluetooth is not available on this device',
       userMessage: 'This device does not support Bluetooth',
       arabicTitle: 'البلوتوث غير مدعوم',
-      arabicMessage: 'جهازك لا يدعم البلوتوث.\nلا يمكن الاتصال بطابعات البلوتوث.',
+      arabicMessage:
+          'جهازك لا يدعم البلوتوث.\nلا يمكن الاتصال بطابعات البلوتوث.',
       suggestions: ['استخدم طابعة WiFi بدلاً من ذلك'],
       isRecoverable: false,
     );
@@ -156,7 +157,8 @@ class PrinterError {
       technicalMessage: 'Location services are disabled',
       userMessage: 'Location must be enabled to discover Bluetooth devices',
       arabicTitle: 'خدمات الموقع مغلقة',
-      arabicMessage: 'يجب تفعيل خدمات الموقع للبحث عن طابعات البلوتوث.\n(هذا مطلب من نظام أندرويد)',
+      arabicMessage:
+          'يجب تفعيل خدمات الموقع للبحث عن طابعات البلوتوث.\n(هذا مطلب من نظام أندرويد)',
       suggestions: [
         'افتح إعدادات الجهاز',
         'قم بتشغيل خدمات الموقع (GPS)',
@@ -192,7 +194,8 @@ class PrinterError {
       technicalMessage: 'Printer is already connected to another device',
       userMessage: 'This printer is currently connected to another device',
       arabicTitle: 'الطابعة متصلة بجهاز آخر',
-      arabicMessage: 'هذه الطابعة متصلة حالياً بجهاز آخر.\nيرجى قطع الاتصال من الجهاز الآخر أولاً.',
+      arabicMessage:
+          'هذه الطابعة متصلة حالياً بجهاز آخر.\nيرجى قطع الاتصال من الجهاز الآخر أولاً.',
       suggestions: [
         'افصل الطابعة من الجهاز الآخر',
         'أعد تشغيل الطابعة',
@@ -225,7 +228,8 @@ class PrinterError {
       technicalMessage: 'Connection attempt timed out',
       userMessage: 'Connection timed out',
       arabicTitle: 'انتهت مهلة الاتصال',
-      arabicMessage: 'استغرق الاتصال وقتاً طويلاً.\nتأكد من أن الطابعة قريبة ومشغلة.',
+      arabicMessage:
+          'استغرق الاتصال وقتاً طويلاً.\nتأكد من أن الطابعة قريبة ومشغلة.',
       suggestions: [
         'اقترب من الطابعة',
         'تأكد من أن الطابعة مشغلة',
@@ -258,7 +262,8 @@ class PrinterError {
       technicalMessage: 'Connection to printer was lost',
       userMessage: 'Lost connection to printer',
       arabicTitle: 'انقطع الاتصال بالطابعة',
-      arabicMessage: 'انقطع الاتصال بالطابعة.\nتأكد من أن الطابعة قريبة ومشغلة.',
+      arabicMessage:
+          'انقطع الاتصال بالطابعة.\nتأكد من أن الطابعة قريبة ومشغلة.',
       suggestions: [
         'تأكد من أن الطابعة مشغلة',
         'اقترب من الطابعة',
@@ -275,11 +280,7 @@ class PrinterError {
       userMessage: 'No printer connected',
       arabicTitle: 'لا توجد طابعة متصلة',
       arabicMessage: 'لا توجد طابعة متصلة حالياً.\nيرجى الاتصال بطابعة أولاً.',
-      suggestions: [
-        'انتقل إلى إعدادات الطابعة',
-        'اختر طابعة',
-        'اتصل بها',
-      ],
+      suggestions: ['انتقل إلى إعدادات الطابعة', 'اختر طابعة', 'اتصل بها'],
       isRecoverable: true,
     );
   }
@@ -294,7 +295,8 @@ class PrinterError {
       technicalMessage: 'No Bluetooth devices discovered',
       userMessage: 'No printers found nearby',
       arabicTitle: 'لم يتم العثور على طابعات',
-      arabicMessage: 'لم يتم العثور على طابعات بلوتوث قريبة.\nتأكد من أن الطابعة مشغلة ومقترنة.',
+      arabicMessage:
+          'لم يتم العثور على طابعات بلوتوث قريبة.\nتأكد من أن الطابعة مشغلة ومقترنة.',
       suggestions: [
         'شغّل الطابعة',
         'اقترن بالطابعة من إعدادات البلوتوث',
@@ -315,7 +317,8 @@ class PrinterError {
       technicalMessage: 'Failed to send data to printer',
       userMessage: 'Failed to send data to printer',
       arabicTitle: 'فشل إرسال البيانات',
-      arabicMessage: 'تعذر إرسال البيانات للطابعة.\nقد تكون الطابعة مشغولة أو انقطع الاتصال.',
+      arabicMessage:
+          'تعذر إرسال البيانات للطابعة.\nقد تكون الطابعة مشغولة أو انقطع الاتصال.',
       suggestions: [
         'تأكد من اتصال الطابعة',
         'تأكد من وجود ورق في الطابعة',
@@ -336,7 +339,8 @@ class PrinterError {
       technicalMessage: 'Network printer is unreachable',
       userMessage: 'Cannot reach network printer',
       arabicTitle: 'لا يمكن الوصول للطابعة',
-      arabicMessage: 'لا يمكن الوصول لطابعة الشبكة.\nتأكد من اتصالك بنفس الشبكة.',
+      arabicMessage:
+          'لا يمكن الوصول لطابعة الشبكة.\nتأكد من اتصالك بنفس الشبكة.',
       suggestions: [
         'تأكد من اتصال الجهاز بالواي فاي',
         'تأكد من اتصال الطابعة بنفس الشبكة',
@@ -357,10 +361,7 @@ class PrinterError {
       userMessage: 'This printer model is not fully compatible',
       arabicTitle: 'طابعة غير متوافقة',
       arabicMessage: 'هذا النموذج من الطابعة قد لا يعمل بشكل صحيح مع التطبيق.',
-      suggestions: [
-        'استخدم طابعة حرارية متوافقة',
-        'جرب طابعة أخرى',
-      ],
+      suggestions: ['استخدم طابعة حرارية متوافقة', 'جرب طابعة أخرى'],
       isRecoverable: false,
     );
   }
