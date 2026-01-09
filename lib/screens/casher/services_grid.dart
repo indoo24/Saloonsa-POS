@@ -9,12 +9,48 @@ class ServicesGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final services = [
-      ServiceModel(name: "تصفيف وقص الشعر", price: 20, category: ''),
-      ServiceModel(name: "تنعيم وتجميد الشعر", price: 44, category: ''),
-      ServiceModel(name: "قص الشعر", price: 15, category: ''),
-      ServiceModel(name: "صبغ وتلوين الشعر", price: 18, category: ''),
-      ServiceModel(name: "تسريحة حفلات", price: 30, category: ''),
-      ServiceModel(name: "تنظيف وجه", price: 25, category: ''),
+      ServiceModel(
+        id: 1,
+        name: "تصفيف وقص الشعر",
+        price: 20,
+        category: 'قص الشعر',
+        image: '',
+      ),
+      ServiceModel(
+        id: 2,
+        name: "تنعيم وتجميد الشعر",
+        price: 44,
+        category: 'قص الشعر',
+        image: '',
+      ),
+      ServiceModel(
+        id: 3,
+        name: "قص الشعر",
+        price: 15,
+        category: 'قص الشعر',
+        image: '',
+      ),
+      ServiceModel(
+        id: 6,
+        name: "صبغ وتلوين الشعر",
+        price: 18,
+        category: 'الصبغات',
+        image: '',
+      ),
+      ServiceModel(
+        id: 16,
+        name: "تسريحة حفلات",
+        price: 30,
+        category: 'تسريحة',
+        image: '',
+      ),
+      ServiceModel(
+        id: 4,
+        name: "تنظيف وجه",
+        price: 25,
+        category: 'العناية بالبشرة',
+        image: '',
+      ),
     ];
 
     return GridView.builder(
@@ -45,9 +81,13 @@ class ServicesGrid extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 6),
-                  Text("${service.price} ر.س",
-                      style: const TextStyle(
-                          color: Colors.teal, fontWeight: FontWeight.bold)),
+                  Text(
+                    "${service.price} ر.س",
+                    style: const TextStyle(
+                      color: Colors.teal,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
             ),

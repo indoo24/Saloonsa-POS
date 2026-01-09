@@ -19,9 +19,10 @@ class SummarySection extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text("الإجمالي: ${total.toStringAsFixed(2)} ر.س",
-              style:
-              const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Text(
+            "الإجمالي: ${total.toStringAsFixed(2)} ر.س",
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
           FilledButton.icon(
             onPressed: () {},
             icon: const Icon(Icons.print),
