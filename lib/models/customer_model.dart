@@ -36,7 +36,7 @@ class CustomerModel {
     // Handle potential null or numeric types for id
     final id = json['id'];
     final parsedId = id is int ? id : (id is String ? int.tryParse(id) : null);
-    
+
     if (parsedId == null) {
       throw Exception('Customer ID is required and must be a valid integer');
     }
@@ -50,7 +50,9 @@ class CustomerModel {
       address: json['address']?.toString(),
       regionId: json['region_id'] is int ? json['region_id'] as int : null,
       areaId: json['area_id'] is int ? json['area_id'] as int : null,
-      region: json['region'] is Map ? json['region'] as Map<String, dynamic>? : null,
+      region: json['region'] is Map
+          ? json['region'] as Map<String, dynamic>?
+          : null,
       area: json['area'] is Map ? json['area'] as Map<String, dynamic>? : null,
       taxNumber: json['taxnumber']?.toString(),
       birthdate: json['birthdate']?.toString(),
@@ -59,8 +61,8 @@ class CustomerModel {
           ? (json['balance'] is int
                 ? (json['balance'] as int).toDouble()
                 : json['balance'] is double
-                    ? json['balance'] as double
-                    : double.tryParse(json['balance'].toString()))
+                ? json['balance'] as double
+                : double.tryParse(json['balance'].toString()))
           : null,
     );
   }

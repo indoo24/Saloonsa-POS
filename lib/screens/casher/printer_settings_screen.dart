@@ -3,8 +3,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../cubits/printer/printer_cubit.dart';
 import '../../cubits/printer/printer_state.dart';
 import '../../models/printer_settings.dart';
+import '../../models/invoice_data.dart';
+import '../thermal_receipt_preview_screen.dart';
 import 'models/printer_device.dart';
 import 'package:toastification/toastification.dart';
+import '../../helpers/system_settings_helper.dart';
+import '../../helpers/validation_guard_mixin.dart';
 
 /// Professional Printer Settings screen with full configuration options
 class PrinterSettingsScreen extends StatefulWidget {
@@ -15,7 +19,7 @@ class PrinterSettingsScreen extends StatefulWidget {
 }
 
 class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, ValidationGuardMixin {
   late TabController _tabController;
   PrinterConnectionType _selectedType = PrinterConnectionType.wifi;
   PaperSize _selectedPaperSize = PaperSize.mm80;
@@ -37,7 +41,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    
+
     // Initialize once
     if (!_isInitialized) {
       final cubit = context.read<PrinterCubit>();
@@ -52,11 +56,25 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
     super.dispose();
   }
 
-  void _scanPrinters() {
+  void _scanPrinters() async {
+    // Validate environment before scanning
+    final isValid = await validateBeforePrinterOperation(
+      operationName: 'scan for printers',
+    );
+
+    if (!isValid) return;
+
     context.read<PrinterCubit>().scanPrinters(_selectedType);
   }
 
-  void _connectToPrinter(PrinterDevice device) {
+  void _connectToPrinter(PrinterDevice device) async {
+    // Validate environment before connecting
+    final isValid = await validateBeforePrinterOperation(
+      operationName: 'connect to printer',
+    );
+
+    if (!isValid) return;
+
     context.read<PrinterCubit>().connectToPrinter(device);
   }
 
@@ -70,13 +88,11 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
 
   Future<void> _updatePaperSize(PaperSize newSize) async {
     setState(() => _selectedPaperSize = newSize);
-    
+
     final cubit = context.read<PrinterCubit>();
     final currentSettings = cubit.settings;
-    
-    await cubit.updateSettings(
-      currentSettings.copyWith(paperSize: newSize),
-    );
+
+    await cubit.updateSettings(currentSettings.copyWith(paperSize: newSize));
 
     if (mounted) {
       toastification.show(
@@ -88,10 +104,182 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
     }
   }
 
+  void _showBluetoothPairingGuidance() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.bluetooth_disabled, color: Colors.orange),
+            SizedBox(width: 12),
+            Expanded(child: Text('لم يتم العثور على طابعات مقترنة')),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'لم يتم العثور على طابعات بلوتوث مقترنة مع هذا الجهاز.',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'لإعداد طابعة بلوتوث:',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 12),
+              _buildStep('1', 'شغّل الطابعة الحرارية'),
+              _buildStep('2', 'افتح إعدادات الأندرويد'),
+              _buildStep('3', 'انتقل إلى البلوتوث'),
+              _buildStep('4', 'اضغط "البحث عن أجهزة جديدة"'),
+              _buildStep('5', 'اختر طابعتك من القائمة'),
+              _buildStep('6', 'أدخل رمز PIN (عادة: 0000 أو 1234)'),
+              _buildStep('7', 'ارجع لهذا التطبيق واضغط "بحث عن طابعات"'),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'ملاحظة: يجب إقران الطابعة عبر إعدادات البلوتوث في الجهاز قبل الاتصال بها من هذا التطبيق.',
+                        style: TextStyle(fontSize: 12, color: Colors.blue),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            ),
+            onPressed: () {
+              Navigator.pop(context);
+              SystemSettingsHelper.openBluetoothSettings();
+            },
+            icon: const Icon(Icons.settings_bluetooth),
+            label: const Text(
+              'فتح إعدادات البلوتوث',
+              style: TextStyle(fontSize: 14),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStep(String number, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: const BoxDecoration(
+              color: Colors.blue,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                number,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Text(text, style: const TextStyle(fontSize: 14))),
+        ],
+      ),
+    );
+  }
+
+  void _showReceiptPreview() {
+    // Create sample invoice data for preview
+    final testData = InvoiceData(
+      orderNumber: '104',
+      branchName: 'الفرع الرئيسي',
+      cashierName: 'Yousef',
+      dateTime: DateTime.now(),
+      customerName: 'عميل كاش',
+      customerPhone: null,
+      items: [
+        InvoiceItem(
+          name: 'قص',
+          price: 25.00,
+          quantity: 1,
+          employeeName: 'محمد',
+        ),
+      ],
+      subtotalBeforeTax: 25.00,
+      discountPercentage: 0.0,
+      discountAmount: 0.0,
+      amountAfterDiscount: 25.00,
+      taxRate: 15.0,
+      taxAmount: 3.75,
+      grandTotal: 28.75,
+      paymentMethod: 'نقدي',
+      paidAmount: 28.75,
+      remainingAmount: 0.0,
+      invoiceNotes: null,
+      businessName: 'صالون الشباب',
+      businessAddress: 'الصبخة البحرية',
+      businessPhone: '0566666464',
+      taxNumber: 'TAX123456789',
+      logoPath: 'assets/images/logo.png',
+    );
+
+    // Navigate to preview screen
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ThermalReceiptPreviewScreen(
+          data: testData,
+          paperWidth: _selectedPaperSize == PaperSize.mm58
+              ? PaperWidth.mm58
+              : PaperWidth.mm80,
+          onPrint: () {
+            Navigator.pop(context);
+            toastification.show(
+              context: context,
+              title: const Text(
+                'هذا مجرد معاينة - يمكنك طباعة الفواتير الفعلية من شاشة الفاتورة',
+              ),
+              type: ToastificationType.info,
+              autoCloseDuration: const Duration(seconds: 3),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('إعدادات الطابعة'),
@@ -128,6 +316,13 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
               type: ToastificationType.success,
               autoCloseDuration: const Duration(seconds: 2),
             );
+          } else if (state is PrintersFound &&
+              state.devices.isEmpty &&
+              state.type == PrinterConnectionType.bluetooth) {
+            // Show Bluetooth pairing guidance when no printers found
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _showBluetoothPairingGuidance();
+            });
           }
         },
         builder: (context, state) {
@@ -140,28 +335,27 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
               children: [
                 // Paper Size Section
                 _buildPaperSizeSection(theme),
-                
+
                 const Divider(height: 1),
-                
+
                 // Connection Status Banner
-                if (state is PrinterConnected) 
-                  _buildConnectedBanner(state),
-                
+                if (state is PrinterConnected) _buildConnectedBanner(state),
+
                 // Connection Type Tabs
                 _buildConnectionTypeTabs(theme),
-                
+
                 // Scan Button
                 _buildScanButton(state),
-                
+
                 // Printers List
                 _buildPrintersList(state),
-                
+
                 // Test Print Button (shown when connected)
                 if (isConnected && !isPrinting) _buildTestPrintButton(theme),
-                
+
                 // Printing indicator
                 if (isPrinting) _buildPrintingIndicator(),
-                
+
                 const SizedBox(height: 20),
               ],
             ),
@@ -198,8 +392,8 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   child: Material(
-                    color: isSelected 
-                        ? theme.colorScheme.primary 
+                    color: isSelected
+                        ? theme.colorScheme.primary
                         : theme.colorScheme.surface,
                     elevation: isSelected ? 4 : 2,
                     borderRadius: BorderRadius.circular(12),
@@ -211,8 +405,8 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: isSelected 
-                                ? theme.colorScheme.primary 
+                            color: isSelected
+                                ? theme.colorScheme.primary
                                 : theme.dividerColor,
                             width: isSelected ? 2 : 1,
                           ),
@@ -221,8 +415,8 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
                           children: [
                             Icon(
                               Icons.note,
-                              color: isSelected 
-                                  ? Colors.white 
+                              color: isSelected
+                                  ? Colors.white
                                   : theme.iconTheme.color,
                               size: 32,
                             ),
@@ -231,8 +425,8 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
                               size.displayName,
                               style: theme.textTheme.titleMedium?.copyWith(
                                 fontWeight: FontWeight.bold,
-                                color: isSelected 
-                                    ? Colors.white 
+                                color: isSelected
+                                    ? Colors.white
                                     : theme.textTheme.bodyLarge?.color,
                               ),
                             ),
@@ -240,8 +434,8 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
                             Text(
                               '${size.charsPerLine} حرف',
                               style: theme.textTheme.bodySmall?.copyWith(
-                                color: isSelected 
-                                    ? Colors.white70 
+                                color: isSelected
+                                    ? Colors.white70
                                     : theme.textTheme.bodySmall?.color,
                               ),
                             ),
@@ -278,6 +472,24 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
               ],
             ),
           ),
+          const SizedBox(height: 16),
+          // Preview Button
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _showReceiptPreview,
+              icon: const Icon(Icons.visibility),
+              label: const Text('معاينة نموذج الفاتورة'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: theme.colorScheme.secondary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -288,10 +500,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            Colors.green.shade400,
-            Colors.green.shade600,
-          ],
+          colors: [Colors.green.shade400, Colors.green.shade600],
         ),
       ),
       child: Row(
@@ -313,10 +522,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
                 const SizedBox(height: 4),
                 Text(
                   state.device.displayName,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                  ),
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
               ],
             ),
@@ -340,18 +546,9 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
         unselectedLabelColor: theme.textTheme.bodyMedium?.color,
         indicatorColor: theme.colorScheme.primary,
         tabs: const [
-          Tab(
-            icon: Icon(Icons.wifi),
-            text: 'WiFi',
-          ),
-          Tab(
-            icon: Icon(Icons.bluetooth),
-            text: 'Bluetooth',
-          ),
-          Tab(
-            icon: Icon(Icons.usb),
-            text: 'USB',
-          ),
+          Tab(icon: Icon(Icons.wifi), text: 'WiFi'),
+          Tab(icon: Icon(Icons.bluetooth), text: 'Bluetooth'),
+          Tab(icon: Icon(Icons.usb), text: 'USB'),
         ],
       ),
     );
@@ -359,7 +556,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
 
   Widget _buildScanButton(PrinterState state) {
     final isScanning = state is PrinterScanning;
-    
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: ElevatedButton.icon(
@@ -408,13 +605,13 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
       if (state.devices.isEmpty) {
         // Different messages based on connection type
         String message = 'تأكد من تشغيل الطابعة واتصالها بالشبكة';
-        
+
         if (state.type == PrinterConnectionType.bluetooth) {
           message = 'تأكد من إقران الطابعة عبر إعدادات البلوتوث أولاً';
         } else if (state.type == PrinterConnectionType.wifi) {
           message = 'تأكد من تشغيل الطابعة واتصالها بنفس الشبكة';
         }
-        
+
         return Container(
           height: 200,
           alignment: Alignment.center,
@@ -422,11 +619,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.print_disabled,
-                size: 64,
-                color: Colors.grey[400],
-              ),
+              Icon(Icons.print_disabled, size: 64, color: Colors.grey[400]),
               const SizedBox(height: 16),
               Text(
                 'لم يتم العثور على طابعات',
@@ -462,11 +655,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.search,
-            size: 64,
-            color: Colors.grey[400],
-          ),
+          Icon(Icons.search, size: 64, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
             'انقر على "بحث عن طابعات" للبدء',
@@ -488,15 +677,17 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen>
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: isThisConnected ? theme.colorScheme.primary : Colors.transparent,
+          color: isThisConnected
+              ? theme.colorScheme.primary
+              : Colors.transparent,
           width: 2,
         ),
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: CircleAvatar(
-          backgroundColor: isThisConnected 
-              ? theme.colorScheme.primary 
+          backgroundColor: isThisConnected
+              ? theme.colorScheme.primary
               : theme.colorScheme.primaryContainer,
           child: Icon(
             _getConnectionTypeIcon(device.type),

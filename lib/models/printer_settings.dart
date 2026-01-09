@@ -4,7 +4,7 @@ import '../screens/casher/models/printer_device.dart';
 enum PaperSize {
   mm58('58mm', 32), // 58mm paper, ~32 characters per line
   mm80('80mm', 48), // 80mm paper, ~48 characters per line
-  a4('A4', 80);     // A4 paper, ~80 characters per line
+  a4('A4', 80); // A4 paper, ~80 characters per line
 
   final String displayName;
   final int charsPerLine;
@@ -43,7 +43,9 @@ class PrinterSettings {
     return PrinterSettings(
       paperSize: paperSize ?? this.paperSize,
       connectionType: connectionType ?? this.connectionType,
-      selectedPrinter: clearPrinter ? null : (selectedPrinter ?? this.selectedPrinter),
+      selectedPrinter: clearPrinter
+          ? null
+          : (selectedPrinter ?? this.selectedPrinter),
       autoReconnect: autoReconnect ?? this.autoReconnect,
     );
   }

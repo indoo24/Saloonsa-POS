@@ -12,6 +12,7 @@ Future<Uint8List> generateInvoicePdf({
   required double discount,
   required String cashierName,
   required String paymentMethod,
+  required String invoiceNumber, // Invoice number from API
   // NEW: API-provided calculated values (preferred)
   double? apiSubtotal,
   double? apiTaxAmount,
@@ -161,7 +162,10 @@ Future<Uint8List> generateInvoicePdf({
                 border: tableBorder,
                 children: [
                   pw.TableRow(
-                    children: [_buildCell('77'), _buildCell('# الفاتورة')],
+                    children: [
+                      _buildCell(invoiceNumber),
+                      _buildCell('# الفاتورة'),
+                    ],
                   ),
                   pw.TableRow(
                     children: [_buildCell(paymentMethod), _buildCell('الدفع')],

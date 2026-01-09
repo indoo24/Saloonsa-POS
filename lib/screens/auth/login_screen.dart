@@ -68,10 +68,7 @@ class _LoginScreenState extends State<LoginScreen> {
         if (state is AuthError) {
           // Show error message
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(state.message),
-              backgroundColor: Colors.red,
-            ),
+            SnackBar(content: Text(state.message), backgroundColor: Colors.red),
           );
         }
       },
@@ -102,7 +99,10 @@ class _LoginScreenState extends State<LoginScreen> {
                           Text(
                             'مرحباً بك مجدداً',
                             textAlign: TextAlign.center,
-                            style: GoogleFonts.cairo(fontSize: 26, fontWeight: FontWeight.bold),
+                            style: GoogleFonts.cairo(
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -117,7 +117,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               decoration: InputDecoration(
                                 labelText: 'النطاق الفرعي',
                                 prefixText: 'https://',
-                                suffixText: '.myapp.com',
+                                suffixText: '.saloonsa.com',
                                 border: const OutlineInputBorder(),
                               ),
                               keyboardType: TextInputType.text,
@@ -154,7 +154,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               border: const OutlineInputBorder(),
                               suffixIcon: IconButton(
                                 icon: Icon(
-                                  _isPasswordObscured ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                                  _isPasswordObscured
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
                                 ),
                                 onPressed: () {
                                   setState(() {
@@ -182,16 +184,23 @@ class _LoginScreenState extends State<LoginScreen> {
                           ElevatedButton(
                             style: ElevatedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 16),
-                              textStyle: GoogleFonts.cairo(fontSize: 18, fontWeight: FontWeight.bold),
+                              textStyle: GoogleFonts.cairo(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                            onPressed: isLoading ? null : _login, // Disable when loading
+                            onPressed: isLoading
+                                ? null
+                                : _login, // Disable when loading
                             child: isLoading
                                 ? const SizedBox(
                                     height: 20,
                                     width: 20,
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white,
+                                      ),
                                     ),
                                   )
                                 : const Text('تسجيل الدخول'),
@@ -206,9 +215,7 @@ class _LoginScreenState extends State<LoginScreen> {
               if (isLoading)
                 Container(
                   color: Colors.black26,
-                  child: const Center(
-                    child: CircularProgressIndicator(),
-                  ),
+                  child: const Center(child: CircularProgressIndicator()),
                 ),
             ],
           ),

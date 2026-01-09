@@ -17,12 +17,9 @@ class CategoriesSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     // Add "الكل" (All) option at the beginning
-    final allCategories = [
-      Category(id: 0, name: 'الكل'),
-      ...categories,
-    ];
+    final allCategories = [Category(id: 0, name: 'الكل'), ...categories];
 
     return SizedBox(
       height: 50,
@@ -44,12 +41,16 @@ class CategoriesSection extends StatelessWidget {
               onCategorySelected(category.name);
             },
             labelStyle: GoogleFonts.cairo(
-              color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
+              color: isSelected
+                  ? theme.colorScheme.onPrimary
+                  : theme.colorScheme.onSurface,
               fontWeight: FontWeight.bold,
             ),
             backgroundColor: theme.colorScheme.surface,
             selectedColor: theme.colorScheme.primary,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
             showCheckmark: false,
             elevation: isSelected ? 4 : 2,
           );

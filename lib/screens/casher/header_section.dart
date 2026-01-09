@@ -48,33 +48,49 @@ class _HeaderSectionState extends State<HeaderSection> {
                 children: [
                   TextFormField(
                     controller: nameController,
-                    decoration: const InputDecoration(labelText: 'الاسم', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                      labelText: 'الاسم',
+                      border: OutlineInputBorder(),
+                    ),
                     validator: (value) => value!.isEmpty ? 'الاسم مطلوب' : null,
                   ),
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: phoneController,
-                    decoration: const InputDecoration(labelText: 'رقم الجوال', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                      labelText: 'رقم الجوال',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   TextFormField(
                     controller: idController,
-                    decoration: const InputDecoration(labelText: 'العنوان', border: OutlineInputBorder()),
+                    decoration: const InputDecoration(
+                      labelText: 'العنوان',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                 ],
               ),
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('إلغاء')),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إلغاء'),
+            ),
             ElevatedButton(
               onPressed: () async {
                 if (formKey.currentState!.validate()) {
                   // Call cubit method to add customer
                   await context.read<CashierCubit>().addCustomer(
                     name: nameController.text,
-                    phone: phoneController.text.isNotEmpty ? phoneController.text : null,
-                    customerId: idController.text.isNotEmpty ? idController.text : null,
+                    phone: phoneController.text.isNotEmpty
+                        ? phoneController.text
+                        : null,
+                    customerId: idController.text.isNotEmpty
+                        ? idController.text
+                        : null,
                   );
                   Navigator.pop(context);
                 }
@@ -102,11 +118,18 @@ class _HeaderSectionState extends State<HeaderSection> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("العميل", style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+              Text(
+                "العميل",
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               const SizedBox(height: 4),
               Container(
                 decoration: BoxDecoration(
-                  border: Border.all(color: theme.colorScheme.outline.withOpacity(0.7)),
+                  border: Border.all(
+                    color: theme.colorScheme.outline.withOpacity(0.7),
+                  ),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
@@ -117,28 +140,40 @@ class _HeaderSectionState extends State<HeaderSection> {
                         height: 48,
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         decoration: BoxDecoration(
-                          border: Border(right: BorderSide(color: theme.colorScheme.outline.withOpacity(0.7)))
+                          border: Border(
+                            right: BorderSide(
+                              color: theme.colorScheme.outline.withOpacity(0.7),
+                            ),
+                          ),
                         ),
-                        child: Icon(Icons.add, color: theme.colorScheme.primary),
+                        child: Icon(
+                          Icons.add,
+                          color: theme.colorScheme.primary,
+                        ),
                       ),
                     ),
                     Expanded(
                       child: Autocomplete<Customer>(
                         key: _autocompleteKey,
-                        initialValue: TextEditingValue(
-                          text: '',
-                        ),
+                        initialValue: TextEditingValue(text: ''),
                         optionsBuilder: (TextEditingValue textEditingValue) {
                           if (textEditingValue.text.isEmpty) {
                             return state.customers; // From cubit state
                           }
                           return state.customers.where((Customer option) {
-                            return option.name.toLowerCase().contains(textEditingValue.text.toLowerCase()) ||
-                                option.phone?.contains(textEditingValue.text) == true ||
-                                option.customerId?.toLowerCase().contains(textEditingValue.text.toLowerCase()) == true;
+                            return option.name.toLowerCase().contains(
+                                  textEditingValue.text.toLowerCase(),
+                                ) ||
+                                option.phone?.contains(textEditingValue.text) ==
+                                    true ||
+                                option.customerId?.toLowerCase().contains(
+                                      textEditingValue.text.toLowerCase(),
+                                    ) ==
+                                    true;
                           });
                         },
-                        displayStringForOption: (Customer option) => option.name,
+                        displayStringForOption: (Customer option) =>
+                            option.name,
                         onSelected: (Customer selection) {
                           widget.onCustomerSelected(selection);
                           // Immediately close keyboard and clear focus
@@ -147,32 +182,35 @@ class _HeaderSectionState extends State<HeaderSection> {
                             FocusManager.instance.primaryFocus?.unfocus();
                           });
                         },
-                        fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
-                          // Store the focus node reference
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            if (_searchFocusNode != focusNode) {
-                              // Update our reference to the actual focus node
-                            }
-                          });
-                          
-                          return TextField(
-                            controller: controller,
-                            focusNode: focusNode,
-                            decoration: const InputDecoration(
-                              border: InputBorder.none,
-                              hintText: 'ابحث عن عميل...',
-                              contentPadding: EdgeInsets.symmetric(horizontal: 16),
-                            ),
-                            onTap: () {
-                              // Only allow opening when explicitly tapped
+                        fieldViewBuilder:
+                            (context, controller, focusNode, onSubmitted) {
+                              // Store the focus node reference
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (_searchFocusNode != focusNode) {
+                                  // Update our reference to the actual focus node
+                                }
+                              });
+
+                              return TextField(
+                                controller: controller,
+                                focusNode: focusNode,
+                                decoration: const InputDecoration(
+                                  border: InputBorder.none,
+                                  hintText: 'ابحث عن عميل...',
+                                  contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                ),
+                                onTap: () {
+                                  // Only allow opening when explicitly tapped
+                                },
+                              );
                             },
-                          );
-                        },
                       ),
                     ),
                   ],
                 ),
-              )
+              ),
             ],
           ),
         );

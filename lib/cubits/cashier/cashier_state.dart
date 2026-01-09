@@ -74,22 +74,24 @@ class CashierLoaded extends CashierState {
       barbers: barbers ?? this.barbers,
       categories: categories ?? this.categories,
       paymentMethods: paymentMethods ?? this.paymentMethods,
-      selectedCustomer: clearCustomer ? null : (selectedCustomer ?? this.selectedCustomer),
+      selectedCustomer: clearCustomer
+          ? null
+          : (selectedCustomer ?? this.selectedCustomer),
       selectedCategory: selectedCategory ?? this.selectedCategory,
     );
   }
 
   @override
   List<Object?> get props => [
-        services,
-        cart,
-        customers,
-        barbers,
-        categories,
-        paymentMethods,
-        selectedCustomer,
-        selectedCategory,
-      ];
+    services,
+    cart,
+    customers,
+    barbers,
+    categories,
+    paymentMethods,
+    selectedCustomer,
+    selectedCategory,
+  ];
 }
 
 /// State when an error occurs

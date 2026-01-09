@@ -1,17 +1,20 @@
-import 'dart:io';
-
-import 'package:barber_casher/screens/casher/print_dirct.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart' as esc_pos;
 import '../../cubits/cashier/cashier_cubit.dart';
 import '../../cubits/cashier/cashier_state.dart';
 import '../../models/payment_method.dart';
-import 'pdf_invoice.dart';
+import '../../models/printer_settings.dart' as models;
+import '../../helpers/invoice_data_mapper.dart';
+import '../../services/settings_service.dart';
+import '../../screens/printing/thermal_preview_screen.dart';
+import 'thermal_receipt_pdf_generator.dart';
 import 'models/customer.dart';
 import 'models/service-model.dart';
+import 'services/printer_service.dart';
 
 class InvoicePage extends StatefulWidget {
   final List<ServiceModel> cart;
@@ -28,7 +31,7 @@ class _InvoicePageState extends State<InvoicePage> {
   final _paidController = TextEditingController();
   final _cashierNameController = TextEditingController(text: 'Yousef');
   final _orderNumberController = TextEditingController(
-    text: '${DateTime.now().millisecondsSinceEpoch}',
+    text: 'سيتم إنشاؤه تلقائياً',
   );
   final _branchNameController = TextEditingController(text: 'الفرع الرئيسي');
   String _paymentMethod = 'نقدي';
@@ -133,6 +136,18 @@ class _InvoicePageState extends State<InvoicePage> {
     return 'cash';
   }
 
+  /// Convert from models.PaperSize to esc_pos.PaperSize
+  esc_pos.PaperSize _convertToEscPosPaperSize(models.PaperSize paperSize) {
+    switch (paperSize) {
+      case models.PaperSize.mm58:
+        return esc_pos.PaperSize.mm58;
+      case models.PaperSize.mm80:
+        return esc_pos.PaperSize.mm80;
+      case models.PaperSize.a4:
+        return esc_pos.PaperSize.mm80; // Default A4 to 80mm for thermal
+    }
+  }
+
   // Future<void> _handlePrint() async {
   //   final pdfData = await generateInvoicePdf(
   //     customer: widget.customer,
@@ -143,18 +158,152 @@ class _InvoicePageState extends State<InvoicePage> {
   //   );
   //   await Printing.layoutPdf(onLayout: (_) => pdfData);
   // }
-  Future<bool> tryConnectToPrinter() async {
-    try {
-      final socket = await Socket.connect(
-        '192.168.1.123',
-        9100,
-        timeout: const Duration(seconds: 3),
+
+  /// Check if a printer is connected via PrinterService
+  /// This properly handles WiFi, Bluetooth, and USB printers
+  bool isPrinterConnected() {
+    final printerService = PrinterService();
+    final isConnected = printerService.connectedPrinter != null;
+
+    print('🔌 Printer Connection Status: $isConnected');
+    if (isConnected) {
+      final printer = printerService.connectedPrinter!;
+      print('  Printer: ${printer.name}');
+      print('  Type: ${printer.type}');
+      print('  Address: ${printer.address}');
+    } else {
+      print(
+        '  ⚠️ No printer connected. Please connect a printer from Settings.',
       );
-      socket.destroy();
-      return true;
+    }
+
+    return isConnected;
+  }
+
+  // Preview thermal receipt as PDF - First saves to API, then fetches data for preview
+  Future<void> _handlePreviewReceipt() async {
+    if (_isSaving) return;
+
+    setState(() => _isSaving = true);
+
+    try {
+      // Calculate totals locally (matching backend logic)
+      final calculations = _calculateTotals();
+      final subtotal = calculations['subtotal']!;
+      final discountPercentage = calculations['discountPercentage']!;
+      final discountAmount = calculations['discountAmount']!;
+      final taxAmount = calculations['taxAmount']!;
+      final finalTotal = calculations['finalTotal']!;
+      final paidAmount = double.tryParse(_paidController.text) ?? finalTotal;
+
+      print('💰 Invoice Submission for Preview (Calculated in App):');
+      print('  Subtotal: $subtotal');
+      print('  Discount %: $discountPercentage');
+      print('  Discount Amount: $discountAmount');
+      print('  Amount After Discount: ${calculations['amountAfterDiscount']}');
+      print('  Tax (15%): $taxAmount');
+      print('  Final Total: $finalTotal');
+      print('  Paid Amount: $paidAmount');
+
+      // First save the invoice to get API data
+      final apiPaymentType = _getPaymentTypeForApi(context);
+
+      final invoice = await context.read<CashierCubit>().submitInvoice(
+        paymentType: apiPaymentType,
+        tax: 0, // Backend will calculate
+        discount: discountPercentage,
+        paid: paidAmount,
+      );
+
+      if (invoice == null) {
+        throw Exception('فشل في حفظ الفاتورة');
+      }
+
+      print('✅ Invoice saved for preview:');
+      print('  Invoice Number: ${invoice.invoiceNumber}');
+      print('  Invoice ID: ${invoice.id}');
+
+      // Update order number field with invoice number from API
+      setState(() {
+        _orderNumberController.text = invoice.invoiceNumber.toString();
+      });
+
+      // Fetch print data from API
+      print('📡 Fetching print data from API for invoice ID: ${invoice.id}');
+      final printData = await context.read<CashierCubit>().getPrintData(
+        invoice.id,
+      );
+
+      if (printData == null) {
+        throw Exception('فشل في جلب بيانات الطباعة من API');
+      }
+
+      print('✅ Print data received from API');
+      print('  Order ID: ${printData['order_id']}');
+      print('  Invoice Number: ${printData['invoice_number']}');
+      print('  Subtotal: ${printData['subtotal']}');
+      print('  Tax: ${printData['tax_amount'] ?? printData['tax']}');
+      print('  Total: ${printData['total']}');
+
+      // Get settings for business info
+      final settingsService = SettingsService();
+      final settings = await settingsService.loadSettings();
+
+      // Create invoice data from API response
+      final invoiceData = InvoiceDataMapper.fromApiPrintData(
+        printData,
+        branchName: _branchNameController.text,
+        businessName: settings.businessName,
+        businessAddress: settings.address,
+        businessPhone: settings.phoneNumber,
+        taxNumber: settings.taxNumber.isEmpty ? null : settings.taxNumber,
+        logoPath: 'assets/images/logo.png',
+      );
+
+      print('📄 Generating PDF from API data...');
+
+      // Generate PDF from API data
+      final pdfBytes =
+          await ThermalReceiptPdfGenerator.generateThermalReceiptPdf(
+            data: invoiceData,
+          );
+
+      print('✅ PDF generated successfully');
+
+      // Display PDF preview using printing package
+      if (!mounted) return;
+
+      await Printing.layoutPdf(
+        onLayout: (format) => pdfBytes,
+        name: 'thermal_receipt_${invoiceData.orderNumber}.pdf',
+      );
+
+      print('📱 PDF preview opened');
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ تم حفظ الفاتورة ومعاينتها بنجاح'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     } catch (e) {
-      print('❌ الطابعة غير متصلة: $e');
-      return false;
+      print('❌ Error in preview: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ خطأ في معاينة الفاتورة: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
 
@@ -196,6 +345,7 @@ class _InvoicePageState extends State<InvoicePage> {
 
       if (invoice != null && mounted) {
         print('✅ Invoice saved with calculated values:');
+        print('  Invoice Number: ${invoice.invoiceNumber}');
         print(
           '  Subtotal Before Tax: ${invoice.subtotalBeforeTax ?? invoice.subtotal}',
         );
@@ -207,6 +357,11 @@ class _InvoicePageState extends State<InvoicePage> {
         print('  Final Total: ${invoice.finalTotal ?? invoice.total}');
         print('  Paid Amount: ${invoice.paidAmount}');
         print('  Remaining Amount: ${invoice.remainingAmount}');
+
+        // Update order number field with invoice number from API
+        setState(() {
+          _orderNumberController.text = invoice.invoiceNumber.toString();
+        });
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -232,37 +387,39 @@ class _InvoicePageState extends State<InvoicePage> {
     }
   }
 
-  // Save and print invoice
+  // ════════════════════════════════════════════════════════════════════════════
+  // PRODUCTION-GRADE SAVE & PRINT WORKFLOW
+  // ════════════════════════════════════════════════════════════════════════════
+  //
+  // STRICT FLOW (NON-NEGOTIABLE):
+  // 1. Save invoice to backend (if fails → STOP)
+  // 2. Navigate to ThermalPreviewScreen (user sees exact receipt)
+  // 3. User confirms and presses "Print Receipt" button
+  // 4. Attempt thermal printing (PRIMARY PATH)
+  // 5. If thermal fails → automatic PDF fallback (SAFETY NET)
+  // ════════════════════════════════════════════════════════════════════════════
+
   Future<void> _handleSaveAndPrint() async {
     if (_isSaving) return;
 
     setState(() => _isSaving = true);
 
     try {
-      // Calculate totals locally (matching backend logic)
+      // ═══ STEP 1: SAVE INVOICE ═══
+      print('═══════════════════════════════════════════');
+      print('STEP 1: SAVING INVOICE TO BACKEND');
+      print('═══════════════════════════════════════════');
+
       final calculations = _calculateTotals();
-      final subtotal = calculations['subtotal']!;
       final discountPercentage = calculations['discountPercentage']!;
-      final discountAmount = calculations['discountAmount']!;
-      final taxAmount = calculations['taxAmount']!;
       final finalTotal = calculations['finalTotal']!;
       final paidAmount = double.tryParse(_paidController.text) ?? finalTotal;
 
-      print('💰 Invoice Submission (Save & Print - Calculated in App):');
-      print('  Subtotal: $subtotal');
-      print('  Discount %: $discountPercentage');
-      print('  Discount Amount: $discountAmount');
-      print('  Amount After Discount: ${calculations['amountAfterDiscount']}');
-      print('  Tax (15%): $taxAmount');
-      print('  Final Total: $finalTotal');
-      print('  Paid Amount: $paidAmount');
-
-      // First save the invoice
       final apiPaymentType = _getPaymentTypeForApi(context);
 
       final invoice = await context.read<CashierCubit>().submitInvoice(
         paymentType: apiPaymentType,
-        tax: 0, // Backend will calculate
+        tax: 0, // Backend calculates
         discount: discountPercentage,
         paid: paidAmount,
       );
@@ -271,42 +428,90 @@ class _InvoicePageState extends State<InvoicePage> {
         throw Exception('فشل في حفظ الفاتورة');
       }
 
-      print('✅ Invoice saved with calculated values:');
-      print(
-        '  Subtotal Before Tax: ${invoice.subtotalBeforeTax ?? invoice.subtotal}',
-      );
-      print('  Tax Amount: ${invoice.taxAmount ?? invoice.tax}');
-      print('  Total After Tax: ${invoice.totalAfterTax}');
-      print('  Discount Amount: ${invoice.discountAmount ?? invoice.discount}');
-      print('  Final Total: ${invoice.finalTotal ?? invoice.total}');
-      print('  Paid Amount: ${invoice.paidAmount}');
-      print('  Remaining Amount: ${invoice.remainingAmount}');
+      print('✅ Invoice saved successfully');
+      print('   Invoice Number: ${invoice.invoiceNumber}');
+      print('   Invoice ID: ${invoice.id}');
 
-      // Fetch print data from API
+      // Update order number field
+      setState(() {
+        _orderNumberController.text = invoice.invoiceNumber.toString();
+      });
+
+      // ═══ STEP 2: FETCH PRINT DATA FROM API ═══
+      print('═══════════════════════════════════════════');
+      print('STEP 2: FETCHING PRINT DATA FROM API');
+      print('═══════════════════════════════════════════');
+
       final printData = await context.read<CashierCubit>().getPrintData(
         invoice.id,
       );
 
       if (printData == null) {
-        throw Exception('فشل في جلب بيانات الطباعة');
+        throw Exception('فشل في جلب بيانات الطباعة من API');
       }
 
-      // Then print using API data
-      await _handlePrintWithApiData(printData);
+      print('✅ Print data received from API');
+      print('   Order ID: ${printData['order_id']}');
+      print('   Invoice Number: ${printData['invoice_number']}');
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ تم حفظ وطباعة الفاتورة بنجاح'),
-            backgroundColor: Colors.green,
+      // ═══ STEP 3: CREATE INVOICE DATA ═══
+      final settingsService = SettingsService();
+      final settings = await settingsService.loadSettings();
+
+      final invoiceData = InvoiceDataMapper.fromApiPrintData(
+        printData,
+        branchName: _branchNameController.text,
+        businessName: settings.businessName,
+        businessAddress: settings.address,
+        businessPhone: settings.phoneNumber,
+        taxNumber: settings.taxNumber.isEmpty ? null : settings.taxNumber,
+        logoPath: 'assets/images/logo.png',
+      );
+
+      print('✅ InvoiceData created');
+
+      // ═══ STEP 4: NAVIGATE TO PREVIEW SCREEN ═══
+      print('═══════════════════════════════════════════');
+      print('STEP 3: OPENING PREVIEW SCREEN');
+      print('═══════════════════════════════════════════');
+
+      if (!mounted) return;
+
+      // Get paper size from printer settings and convert to ESC/POS enum
+      final printerService = PrinterService();
+      final settingsPaperSize = printerService.settings.paperSize;
+
+      // Convert from models.PaperSize to esc_pos.PaperSize
+      final escPosPaperSize = _convertToEscPosPaperSize(settingsPaperSize);
+
+      // Navigate to preview screen (user will confirm printing there)
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => ThermalPreviewScreen(
+            invoiceData: invoiceData,
+            paperSize: escPosPaperSize,
           ),
-        );
+        ),
+      );
+
+      print('✅ Returned from preview screen');
+
+      // ═══ STEP 5: CLOSE INVOICE PAGE ═══
+      // After returning from preview (whether printed or not), close invoice page
+      if (mounted) {
         Navigator.of(context).pop();
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('❌ Error in save & print workflow: $e');
+      print('Stack trace: $stackTrace');
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('❌ خطأ: $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('❌ خطأ: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
         );
       }
     } finally {
@@ -316,8 +521,17 @@ class _InvoicePageState extends State<InvoicePage> {
     }
   }
 
+  // ════════════════════════════════════════════════════════════════════════════
+  // OLD PRINT METHOD (DEPRECATED - KEPT FOR REFERENCE)
+  // ════════════════════════════════════════════════════════════════════════════
+  // This method is replaced by the new production-grade workflow in _handleSaveAndPrint
+  // which navigates to ThermalPreviewScreen for user confirmation before printing.
+  // ════════════════════════════════════════════════════════════════════════════
+
+  /*
   /// Print invoice using data from API
-  Future<void> _handlePrintWithApiData(Map<String, dynamic> printData) async {
+  /// Returns true if thermal (direct) print was used, false if PDF dialog was shown
+  Future<bool> _handlePrintWithApiData(Map<String, dynamic> printData) async {
     try {
       print('📄 Printing with API data: $printData');
 
@@ -345,10 +559,17 @@ class _InvoicePageState extends State<InvoicePage> {
       }).toList();
 
       // Extract order details matching backend structure
+      // IMPORTANT: Use invoice_number (same as website) instead of order_id
       final orderNumber =
-          printData['order_id']?.toString() ??
           printData['invoice_number']?.toString() ??
+          printData['order_id']?.toString() ??
           '';
+      
+      print('📋 Invoice Number Debug:');
+      print('  invoice_number from API: ${printData['invoice_number']}');
+      print('  order_id from API: ${printData['order_id']}');
+      print('  Using orderNumber: $orderNumber');
+      
       final discountPercentage =
           (printData['discount_percentage'] as num?)?.toDouble() ??
           (printData['discount'] as num?)?.toDouble() ??
@@ -394,50 +615,66 @@ class _InvoicePageState extends State<InvoicePage> {
       print('  Paid: $paid');
       print('  Remaining/Due: $remaining');
 
-      final connected = await tryConnectToPrinter();
+      // Check paper size setting from printer service
+      final printerService = PrinterService();
+      final paperSize = printerService.settings.paperSize;
+
+      print('📄 Paper Size Setting: ${paperSize.displayName}');
+
+      // Check if printer is connected
+      final connected = isPrinterConnected();
+
       if (connected) {
-        await printInvoiceDirect(
-          customer: customer,
-          services: services,
-          discount:
-              discountPercentage, // Pass percentage for fallback calculation
-          cashierName: cashierName,
-          paymentMethod: paymentMethod, // Use API payment method
-          orderNumber: orderNumber,
+        // Create InvoiceData from API response for consistent formatting
+        print('🖨️ Printing to thermal printer using InvoiceData (matches PDF format)');
+        
+        final settingsService = SettingsService();
+        final settings = await settingsService.loadSettings();
+        
+        final invoiceData = InvoiceDataMapper.fromApiPrintData(
+          printData,
           branchName: _branchNameController.text,
-          paid: paid,
-          remaining: remaining,
-          // Pass API values for consistent calculation
-          apiSubtotal: apiSubtotal,
-          apiTaxAmount: apiTaxAmount,
-          apiDiscountAmount: apiDiscountAmount,
-          apiGrandTotal: apiGrandTotal,
+          businessName: settings.businessName,
+          businessAddress: settings.address,
+          businessPhone: settings.phoneNumber,
+          taxNumber: settings.taxNumber.isEmpty ? null : settings.taxNumber,
+          logoPath: 'assets/images/logo.png',
         );
+        
+        // Print using the new method that matches PDF format
+        print('⏰ BEFORE PRINT CALL - Time: ${DateTime.now()}');
+        final printSuccess = await printInvoiceDirectFromData(data: invoiceData);
+        print('⏰ AFTER PRINT CALL - Time: ${DateTime.now()}, Success: $printSuccess');
+        
+        if (!printSuccess) {
+          print('⚠️ Thermal print failed, but continuing...');
+        }
+        
+        return true; // Thermal/direct print - can close invoice page
       } else {
+        // Fallback to PDF if printer not connected
+        print('⚠️ Printer not connected, opening PDF dialog');
         final pdfData = await generateInvoicePdf(
           customer: customer,
           services: services,
-          discount:
-              discountPercentage, // Pass percentage for fallback calculation
+          discount: discountPercentage,
           cashierName: cashierName,
-          paymentMethod: paymentMethod, // Use API payment method
-          // Pass API values for accurate PDF
+          paymentMethod: paymentMethod,
+          invoiceNumber: orderNumber,
           apiSubtotal: apiSubtotal,
           apiTaxAmount: apiTaxAmount,
           apiDiscountAmount: apiDiscountAmount,
           apiGrandTotal: apiGrandTotal,
-          // apiDiscountAmount: apiDiscountAmount,
-          // apiGrandTotal: apiGrandTotal,
         );
         await Printing.layoutPdf(onLayout: (_) => pdfData);
+        return false; // PDF dialog shown - must stay on page
       }
-
-      print('✅ Print completed successfully with API data');
     } catch (e) {
       print('❌ Error printing with API data: $e');
       rethrow;
     }
   }
+  */
 
   // Date and Time Picker
   Future<void> _selectServiceDateTime() async {
@@ -512,6 +749,31 @@ class _InvoicePageState extends State<InvoicePage> {
               false, // showEstimateNote removed
             ),
             const SizedBox(height: 32),
+            // Preview Receipt Button
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: _isSaving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.visibility_outlined),
+                label: Text(
+                  _isSaving
+                      ? "جاري الحفظ والمعاينة..."
+                      : "حفظ ومعاينة الفاتورة",
+                ),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 50),
+                  foregroundColor: theme.primaryColor,
+                  side: BorderSide(color: theme.primaryColor, width: 2),
+                ),
+                onPressed: _isSaving ? null : _handlePreviewReceipt,
+              ),
+            ),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -579,9 +841,10 @@ class _InvoicePageState extends State<InvoicePage> {
             const Divider(height: 24),
             _buildInfoRow(
               theme,
-              "رقم الطلب:",
+              "رقم الفاتورة:",
               null,
               controller: _orderNumberController,
+              isReadOnly: true,
             ),
             _buildInfoRow(
               theme,
@@ -1024,6 +1287,7 @@ class _InvoicePageState extends State<InvoicePage> {
     TextEditingController? controller,
     Widget? dropdown,
     bool isNumeric = false,
+    bool isReadOnly = false,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -1040,13 +1304,19 @@ class _InvoicePageState extends State<InvoicePage> {
                 ? TextFormField(
                     controller: controller,
                     textAlign: TextAlign.right,
+                    readOnly: isReadOnly,
                     keyboardType: isNumeric
                         ? const TextInputType.numberWithOptions(decimal: true)
                         : TextInputType.text,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       isDense: true,
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
+                      filled: isReadOnly,
+                      fillColor: isReadOnly ? Colors.grey.shade100 : null,
                     ),
+                    style: isReadOnly
+                        ? TextStyle(color: Colors.grey.shade600)
+                        : null,
                   )
                 : (dropdown ??
                       Text(value ?? '', style: theme.textTheme.bodyLarge)),
