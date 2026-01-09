@@ -12,7 +12,7 @@ class ThermalReceiptPdfGenerator {
   // 80mm paper width in points (1mm = 2.83465 points)
   static const double PAPER_WIDTH_MM = 80.0;
   static const double PAPER_WIDTH_POINTS = PAPER_WIDTH_MM * 2.83465;
-  
+
   /// Generate thermal receipt PDF
   /// Returns PDF bytes that can be displayed or printed
   static Future<Uint8List> generateThermalReceiptPdf({
@@ -103,9 +103,7 @@ class ThermalReceiptPdfGenerator {
                 pw.Container(
                   width: double.infinity,
                   padding: const pw.EdgeInsets.symmetric(vertical: 6),
-                  decoration: pw.BoxDecoration(
-                    border: pw.Border.all(width: 1),
-                  ),
+                  decoration: pw.BoxDecoration(border: pw.Border.all(width: 1)),
                   child: pw.Text(
                     'فاتورة ضريبية مبسطة',
                     style: pw.TextStyle(
@@ -154,7 +152,8 @@ class ThermalReceiptPdfGenerator {
                 pw.SizedBox(height: 12),
 
                 // Thank You Message
-                if (data.invoiceNotes != null && data.invoiceNotes!.isNotEmpty) ...[
+                if (data.invoiceNotes != null &&
+                    data.invoiceNotes!.isNotEmpty) ...[
                   pw.Container(
                     width: double.infinity,
                     padding: const pw.EdgeInsets.all(6),
@@ -174,9 +173,7 @@ class ThermalReceiptPdfGenerator {
                 pw.Container(
                   width: 80,
                   height: 80,
-                  decoration: pw.BoxDecoration(
-                    border: pw.Border.all(width: 1),
-                  ),
+                  decoration: pw.BoxDecoration(border: pw.Border.all(width: 1)),
                   child: pw.Center(
                     child: pw.Text(
                       'QR Code',
@@ -302,14 +299,17 @@ class ThermalReceiptPdfGenerator {
   ) {
     return pw.Container(
       width: double.infinity,
-      decoration: pw.BoxDecoration(
-        border: pw.Border.all(width: 1),
-      ),
+      decoration: pw.BoxDecoration(border: pw.Border.all(width: 1)),
       child: pw.Column(
         children: [
           // Subtotal
-          _buildTotalRow('المجموع الفرعي', data.subtotalBeforeTax, font, boldFont),
-          
+          _buildTotalRow(
+            'المجموع الفرعي',
+            data.subtotalBeforeTax,
+            font,
+            boldFont,
+          ),
+
           // Discount (if any)
           if (data.hasDiscount) ...[
             pw.Divider(height: 1, thickness: 1),
@@ -327,7 +327,7 @@ class ThermalReceiptPdfGenerator {
               boldFont,
             ),
           ],
-          
+
           // Tax
           pw.Divider(height: 1, thickness: 1),
           _buildTotalRow(
@@ -336,7 +336,7 @@ class ThermalReceiptPdfGenerator {
             font,
             boldFont,
           ),
-          
+
           // Grand Total
           pw.Divider(height: 1, thickness: 1),
           _buildTotalRow(
@@ -346,12 +346,17 @@ class ThermalReceiptPdfGenerator {
             boldFont,
             isBold: true,
           ),
-          
+
           // Payment Info (if available)
           if (data.hasPaymentInfo) ...[
             pw.Divider(height: 1, thickness: 1),
-            _buildTotalRow('طريقة الدفع', null, font, boldFont,
-                valueText: data.paymentMethod),
+            _buildTotalRow(
+              'طريقة الدفع',
+              null,
+              font,
+              boldFont,
+              valueText: data.paymentMethod,
+            ),
             if (data.paidAmount != null) ...[
               pw.Divider(height: 1, thickness: 1),
               _buildTotalRow('المبلغ المدفوع', data.paidAmount, font, boldFont),
@@ -419,7 +424,8 @@ class ThermalReceiptPdfGenerator {
             ),
           ),
           pw.Text(
-            valueText ?? (value != null ? '${value.toStringAsFixed(2)} ر.س' : ''),
+            valueText ??
+                (value != null ? '${value.toStringAsFixed(2)} ر.س' : ''),
             style: pw.TextStyle(
               font: isBold ? boldFont : font,
               fontSize: isBold ? 10 : 9,

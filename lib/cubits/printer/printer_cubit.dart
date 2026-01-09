@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../screens/casher/models/printer_device.dart';
 import '../../screens/casher/services/printer_service.dart';
@@ -10,14 +11,15 @@ import 'printer_state.dart';
 class PrinterCubit extends Cubit<PrinterState> {
   final PrinterService _printerService;
   final PermissionService _permissionService;
-  final error_mapper.PrinterErrorMapper _errorMapper = error_mapper.PrinterErrorMapper();
+  final error_mapper.PrinterErrorMapper _errorMapper =
+      error_mapper.PrinterErrorMapper();
 
   PrinterCubit({
     PrinterService? printerService,
     PermissionService? permissionService,
-  })  : _printerService = printerService ?? PrinterService(),
-        _permissionService = permissionService ?? PermissionService(),
-        super(const PrinterInitial());
+  }) : _printerService = printerService ?? PrinterService(),
+       _permissionService = permissionService ?? PermissionService(),
+       super(const PrinterInitial());
 
   /// Initialize and auto-reconnect to previously connected printer
   Future<void> initialize() async {
@@ -44,29 +46,56 @@ class PrinterCubit extends Cubit<PrinterState> {
   }
 
   /// Scan for printers based on connection type
+  ///
+  /// PRODUCTION FIX: Hard timeout of 5 seconds to prevent infinite loading
+  /// - Bluetooth Classic retrieval should be instant (< 100ms)
+  /// - WiFi/USB scanning may take longer
+  /// - If timeout occurs, user gets clear error message
+  /// - Loading state ALWAYS resolves to success or error
   Future<void> scanPrinters(PrinterConnectionType type) async {
     emit(PrinterScanning(type));
 
     try {
-      List<PrinterDevice> devices;
+      // CRITICAL FIX: Wrap entire scan operation in timeout
+      // Bluetooth Classic: Should complete in < 1 second
+      // WiFi/USB: May take up to 5 seconds
+      final devices = await Future.any([
+        _performScan(type),
+        Future.delayed(
+          const Duration(seconds: 5),
+          () => throw TimeoutException(
+            'Printer scan timed out after 5 seconds',
+            const Duration(seconds: 5),
+          ),
+        ),
+      ]);
 
-      switch (type) {
-        case PrinterConnectionType.wifi:
-          devices = await _printerService.scanWiFiPrinters();
-          break;
-        case PrinterConnectionType.bluetooth:
-          // The service now handles pre-flight checks internally
-          devices = await _printerService.scanBluetoothPrinters();
-          break;
-        case PrinterConnectionType.usb:
-          devices = await _printerService.scanUSBPrinters();
-          break;
-      }
-
+      // SUCCESS: Always emit result, even if empty
       emit(PrintersFound(devices, type));
+    } on TimeoutException catch (_) {
+      // TIMEOUT: Show user-friendly message
+      final errorMsg = type == PrinterConnectionType.bluetooth
+          ? 'انتهت مهلة البحث عن الطابعات. تأكد من تفعيل البلوتوث وإقران الطابعة في إعدادات الأندرويد.'
+          : 'انتهت مهلة البحث عن الطابعات. تأكد من تشغيل الطابعة واتصالها بالشبكة.';
+
+      emit(PrinterError(errorMsg));
     } catch (e) {
+      // ERROR: Always emit error state
       final errorMsg = _getErrorMessage(e);
       emit(PrinterError(errorMsg));
+    }
+  }
+
+  /// Internal scan method extracted for timeout wrapping
+  Future<List<PrinterDevice>> _performScan(PrinterConnectionType type) async {
+    switch (type) {
+      case PrinterConnectionType.wifi:
+        return await _printerService.scanWiFiPrinters();
+      case PrinterConnectionType.bluetooth:
+        // The service now handles pre-flight checks internally
+        return await _printerService.scanBluetoothPrinters();
+      case PrinterConnectionType.usb:
+        return await _printerService.scanUSBPrinters();
     }
   }
 

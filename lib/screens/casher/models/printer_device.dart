@@ -5,6 +5,21 @@ enum PrinterConnectionType {
   usb, // USB printer
 }
 
+/// Printer source type - how the printer was discovered
+enum PrinterSourceType {
+  /// Built-in printer (e.g., Sunmi InnerPrinter)
+  builtIn,
+
+  /// Paired/bonded Bluetooth device (from system settings)
+  paired,
+
+  /// Newly discovered device (via discovery scan, not yet paired)
+  discovered,
+
+  /// Unknown source (default for backwards compatibility)
+  unknown,
+}
+
 /// Printer device information
 class PrinterDevice {
   final String id;
@@ -13,6 +28,7 @@ class PrinterDevice {
   final int? port; // Port for WiFi printers (usually 9100)
   final PrinterConnectionType type;
   final bool isConnected;
+  final PrinterSourceType sourceType; // How the printer was discovered
 
   PrinterDevice({
     required this.id,
@@ -21,6 +37,7 @@ class PrinterDevice {
     this.port,
     required this.type,
     this.isConnected = false,
+    this.sourceType = PrinterSourceType.unknown,
   });
 
   PrinterDevice copyWith({
@@ -30,6 +47,7 @@ class PrinterDevice {
     int? port,
     PrinterConnectionType? type,
     bool? isConnected,
+    PrinterSourceType? sourceType,
   }) {
     return PrinterDevice(
       id: id ?? this.id,
@@ -38,17 +56,47 @@ class PrinterDevice {
       port: port ?? this.port,
       type: type ?? this.type,
       isConnected: isConnected ?? this.isConnected,
+      sourceType: sourceType ?? this.sourceType,
     );
   }
 
+  /// Get the source label for UI display (Arabic)
+  String get sourceLabel {
+    switch (sourceType) {
+      case PrinterSourceType.builtIn:
+        return 'مدمجة';
+      case PrinterSourceType.paired:
+        return 'مقترنة';
+      case PrinterSourceType.discovered:
+        return 'جديدة';
+      case PrinterSourceType.unknown:
+        return '';
+    }
+  }
+
+  /// Get the source label for UI display (English)
+  String get sourceLabelEn {
+    switch (sourceType) {
+      case PrinterSourceType.builtIn:
+        return 'Built-in';
+      case PrinterSourceType.paired:
+        return 'Paired';
+      case PrinterSourceType.discovered:
+        return 'New';
+      case PrinterSourceType.unknown:
+        return '';
+    }
+  }
+
   String get displayName {
+    final label = sourceLabel.isNotEmpty ? ' [$sourceLabel]' : '';
     switch (type) {
       case PrinterConnectionType.wifi:
-        return '$name (WiFi - ${address ?? "N/A"})';
+        return '$name (WiFi - ${address ?? "N/A"})$label';
       case PrinterConnectionType.bluetooth:
-        return '$name (Bluetooth)';
+        return '$name (Bluetooth)$label';
       case PrinterConnectionType.usb:
-        return '$name (USB)';
+        return '$name (USB)$label';
     }
   }
 
@@ -60,6 +108,7 @@ class PrinterDevice {
       'port': port,
       'type': type.toString(),
       'isConnected': isConnected,
+      'sourceType': sourceType.toString(),
     };
   }
 
@@ -74,6 +123,10 @@ class PrinterDevice {
         orElse: () => PrinterConnectionType.wifi,
       ),
       isConnected: json['isConnected'] ?? false,
+      sourceType: PrinterSourceType.values.firstWhere(
+        (e) => e.toString() == json['sourceType'],
+        orElse: () => PrinterSourceType.unknown,
+      ),
     );
   }
 }

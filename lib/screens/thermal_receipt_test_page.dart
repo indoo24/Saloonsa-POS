@@ -3,7 +3,7 @@ import '../models/invoice_data.dart';
 import '../screens/thermal_receipt_preview_screen.dart';
 
 /// Test page to preview thermal receipt format
-/// 
+///
 /// This is a quick test page to see how the receipt looks
 /// without needing to create a full invoice or connect to a printer.
 class ThermalReceiptTestPage extends StatelessWidget {
@@ -51,7 +51,9 @@ class ThermalReceiptTestPage extends StatelessWidget {
       onPrint: () {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('هذا مجرد معاينة - الطباعة الفعلية ستحتاج طابعة حرارية'),
+            content: Text(
+              'هذا مجرد معاينة - الطباعة الفعلية ستحتاج طابعة حرارية',
+            ),
             backgroundColor: Colors.blue,
           ),
         );

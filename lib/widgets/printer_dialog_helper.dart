@@ -37,35 +37,31 @@ class PrinterDialogHelper {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                message,
-                style: const TextStyle(fontSize: 16),
-              ),
+              Text(message, style: const TextStyle(fontSize: 16)),
               if (suggestions.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 const Text(
                   'الحلول المقترحة:',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
-                ...suggestions.map((suggestion) => Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('  '),
-                          Expanded(
-                            child: Text(
-                              suggestion,
-                              style: const TextStyle(fontSize: 14),
-                            ),
+                ...suggestions.map(
+                  (suggestion) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('  '),
+                        Expanded(
+                          child: Text(
+                            suggestion,
+                            style: const TextStyle(fontSize: 14),
                           ),
-                        ],
-                      ),
-                    )),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ],
           ),
@@ -99,7 +95,8 @@ class PrinterDialogHelper {
       title: error.arabicTitle,
       message: error.arabicMessage,
       suggestions: error.suggestions,
-      canOpenSettings: error.code.contains('PERMISSION') || error.code.contains('DISABLED'),
+      canOpenSettings:
+          error.code.contains('PERMISSION') || error.code.contains('DISABLED'),
     );
   }
 
@@ -138,7 +135,8 @@ class PrinterDialogHelper {
 
     if (connectionType == 'bluetooth') {
       title = 'لم يتم العثور على طابعات';
-      message = 'لم يتم العثور على طابعات بلوتوث قريبة.\n'
+      message =
+          'لم يتم العثور على طابعات بلوتوث قريبة.\n'
           'تأكد من أن الطابعة مشغلة ومقترنة مع الجهاز.';
       suggestions = [
         'شغّل الطابعة',
@@ -148,7 +146,8 @@ class PrinterDialogHelper {
       ];
     } else if (connectionType == 'wifi') {
       title = 'لم يتم العثور على طابعات';
-      message = 'لم يتم العثور على طابعات شبكة.\n'
+      message =
+          'لم يتم العثور على طابعات شبكة.\n'
           'تأكد من اتصال الجهاز والطابعة بنفس الشبكة.';
       suggestions = [
         'تأكد من تشغيل الطابعة',
@@ -171,7 +170,10 @@ class PrinterDialogHelper {
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
@@ -188,16 +190,20 @@ class PrinterDialogHelper {
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
-              ...suggestions.map((s) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('  '),
-                        Expanded(child: Text(s, style: const TextStyle(fontSize: 14))),
-                      ],
-                    ),
-                  )),
+              ...suggestions.map(
+                (s) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('  '),
+                      Expanded(
+                        child: Text(s, style: const TextStyle(fontSize: 14)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ),

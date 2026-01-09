@@ -25,13 +25,13 @@ class BluetoothEnvironmentCheck {
 
   String get readableMessage {
     if (isReady) return 'جاهز للبحث عن الطابعات';
-    
+
     if (error != null) return error!.userMessage;
-    
+
     if (missingRequirements.isNotEmpty) {
       return 'المتطلبات المفقودة:\n${missingRequirements.join('\n')}';
     }
-    
+
     return 'فشل التحقق من البيئة';
   }
 }
@@ -39,7 +39,8 @@ class BluetoothEnvironmentCheck {
 /// Bluetooth environment validation service
 /// Performs pre-flight checks before scanning or connecting
 class BluetoothEnvironmentService {
-  static final BluetoothEnvironmentService _instance = BluetoothEnvironmentService._internal();
+  static final BluetoothEnvironmentService _instance =
+      BluetoothEnvironmentService._internal();
   factory BluetoothEnvironmentService() => _instance;
   BluetoothEnvironmentService._internal();
 
@@ -60,7 +61,7 @@ class BluetoothEnvironmentService {
     try {
       final available = await _bluetoothPrinter.isAvailable;
       isBluetoothAvailable = available ?? false;
-      
+
       if (!isBluetoothAvailable) {
         _logger.e('❌ Bluetooth is not available on this device');
         missingRequirements.add('• جهازك لا يدعم البلوتوث');
@@ -80,7 +81,7 @@ class BluetoothEnvironmentService {
       try {
         final enabled = await _bluetoothPrinter.isOn;
         isBluetoothEnabled = enabled ?? false;
-        
+
         if (!isBluetoothEnabled) {
           _logger.w('⚠️ Bluetooth is disabled');
           missingRequirements.add('• البلوتوث مغلق - يرجى تشغيله');
@@ -99,10 +100,12 @@ class BluetoothEnvironmentService {
     try {
       final locationStatus = await Permission.location.serviceStatus;
       isLocationEnabled = locationStatus.isEnabled;
-      
+
       if (!isLocationEnabled) {
         _logger.w('⚠️ Location services are disabled');
-        missingRequirements.add('• خدمات الموقع مغلقة - مطلوبة للبحث عن البلوتوث');
+        missingRequirements.add(
+          '• خدمات الموقع مغلقة - مطلوبة للبحث عن البلوتوث',
+        );
         error ??= BluetoothEnvironmentError.locationDisabled();
       } else {
         _logger.i('✅ Location services are enabled');
@@ -116,7 +119,7 @@ class BluetoothEnvironmentService {
     bool hasPermissions = false;
     try {
       hasPermissions = await _permissionService.checkBluetoothPermissions();
-      
+
       if (!hasPermissions) {
         _logger.w('⚠️ Bluetooth permissions not granted');
         missingRequirements.add('• صلاحيات البلوتوث غير مفعلة');
@@ -141,7 +144,9 @@ class BluetoothEnvironmentService {
     if (result.isReady) {
       _logger.i('✅ Pre-flight check PASSED - Environment is ready');
     } else {
-      _logger.w('⚠️ Pre-flight check FAILED - ${missingRequirements.length} requirement(s) missing');
+      _logger.w(
+        '⚠️ Pre-flight check FAILED - ${missingRequirements.length} requirement(s) missing',
+      );
     }
 
     return result;
@@ -194,7 +199,8 @@ class BluetoothEnvironmentError {
       technicalMessage: 'Bluetooth is turned off',
       userMessage: 'Bluetooth is turned off. Please enable it and try again.',
       arabicTitle: 'البلوتوث مغلق',
-      arabicMessage: 'البلوتوث مغلق حالياً. يرجى تشغيل البلوتوث من الإعدادات والمحاولة مرة أخرى.',
+      arabicMessage:
+          'البلوتوث مغلق حالياً. يرجى تشغيل البلوتوث من الإعدادات والمحاولة مرة أخرى.',
       suggestions: [
         'افتح إعدادات الجهاز',
         'قم بتشغيل البلوتوث',
@@ -207,9 +213,11 @@ class BluetoothEnvironmentError {
     return const BluetoothEnvironmentError(
       code: 'LOCATION_DISABLED',
       technicalMessage: 'Location services are disabled',
-      userMessage: 'Location services must be enabled to search for Bluetooth printers.',
+      userMessage:
+          'Location services must be enabled to search for Bluetooth printers.',
       arabicTitle: 'خدمات الموقع مغلقة',
-      arabicMessage: 'يجب تفعيل خدمات الموقع للبحث عن طابعات البلوتوث. هذا مطلب من نظام أندرويد.',
+      arabicMessage:
+          'يجب تفعيل خدمات الموقع للبحث عن طابعات البلوتوث. هذا مطلب من نظام أندرويد.',
       suggestions: [
         'افتح إعدادات الجهاز',
         'قم بتشغيل خدمات الموقع (GPS)',

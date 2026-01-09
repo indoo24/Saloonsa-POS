@@ -1,7 +1,18 @@
 import 'package:permission_handler/permission_handler.dart';
 import 'package:logger/logger.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 
-/// Service to handle runtime permissions for Bluetooth and Location
+/// Service to handle runtime permissions for Bluetooth Classic thermal printers
+///
+/// IMPORTANT: This is optimized for Bluetooth Classic (SPP/RFCOMM), NOT BLE
+///
+/// Permission Requirements by Android Version:
+/// - Android 8-11 (API 26-30): Bluetooth permissions are auto-granted at install
+/// - Android 12+ (API 31+): Runtime BLUETOOTH_CONNECT permission required
+///
+/// KEY INSIGHT: For bonded Bluetooth Classic devices, we do NOT need:
+/// - BLUETOOTH_SCAN (only for BLE discovery)
+/// - Location (only for BLE scanning on Android < 12)
 class PermissionService {
   static final PermissionService _instance = PermissionService._internal();
   factory PermissionService() => _instance;
@@ -9,96 +20,99 @@ class PermissionService {
 
   final Logger _logger = Logger();
 
-  /// Request all necessary permissions for Bluetooth scanning
-  /// Returns true if all permissions are granted
+  /// Request Bluetooth Classic permissions (Android version-aware)
+  ///
+  /// Android 8-11: No runtime permissions needed (auto-granted)
+  /// Android 12+: Request BLUETOOTH_CONNECT for bonded device access
+  ///
+  /// Returns PermissionResult indicating grant status
   Future<PermissionResult> requestBluetoothPermissions() async {
-    _logger.i('Requesting Bluetooth permissions...');
+    _logger.i('📋 Requesting Bluetooth Classic permissions...');
 
-    // Check Android version to determine which permissions to request
-    final bluetoothScan = Permission.bluetoothScan;
-    final bluetoothConnect = Permission.bluetoothConnect;
-    final location = Permission.location;
+    // Get Android version
+    final androidInfo = await DeviceInfoPlugin().androidInfo;
+    final sdkInt = androidInfo.version.sdkInt;
 
-    // Request permissions
-    Map<Permission, PermissionStatus> statuses = await [
-      bluetoothScan,
-      bluetoothConnect,
-      location,
-    ].request();
+    _logger.i('📱 Android SDK version: $sdkInt');
 
-    _logger.i('Permission statuses:');
-    _logger.i('  Bluetooth Scan: ${statuses[bluetoothScan]}');
-    _logger.i('  Bluetooth Connect: ${statuses[bluetoothConnect]}');
-    _logger.i('  Location: ${statuses[location]}');
-
-    // Check if all permissions are granted
-    final allGranted = statuses.values.every((status) => status.isGranted);
-
-    if (allGranted) {
-      _logger.i('✅ All Bluetooth permissions granted');
+    // For Android 11 and below, Bluetooth permissions are auto-granted
+    if (sdkInt < 31) {
+      _logger.i('✅ Android < 12: Bluetooth permissions auto-granted');
       return PermissionResult.granted;
     }
 
-    // Check if any permission is permanently denied
-    final anyPermanentlyDenied = statuses.values.any((status) => status.isPermanentlyDenied);
+    // For Android 12+, request BLUETOOTH_CONNECT
+    _logger.i('📱 Android 12+: Requesting BLUETOOTH_CONNECT...');
 
-    if (anyPermanentlyDenied) {
-      _logger.w('⚠️ Some permissions are permanently denied');
+    final status = await Permission.bluetoothConnect.request();
+
+    _logger.i('Permission status: $status');
+
+    if (status.isGranted) {
+      _logger.i('✅ BLUETOOTH_CONNECT granted');
+      return PermissionResult.granted;
+    }
+
+    if (status.isPermanentlyDenied) {
+      _logger.w('⚠️ BLUETOOTH_CONNECT permanently denied');
       return PermissionResult.permanentlyDenied;
     }
 
-    _logger.w('❌ Some permissions were denied');
+    _logger.w('❌ BLUETOOTH_CONNECT denied');
     return PermissionResult.denied;
   }
 
-  /// Check if Bluetooth permissions are already granted
+  /// Check if Bluetooth Classic permissions are already granted
   /// Returns true if all necessary permissions are granted
   Future<bool> checkBluetoothPermissions() async {
-    _logger.i('Checking Bluetooth permissions...');
+    _logger.i('🔍 Checking Bluetooth Classic permissions...');
 
-    final bluetoothScan = await Permission.bluetoothScan.status;
-    final bluetoothConnect = await Permission.bluetoothConnect.status;
-    final location = await Permission.location.status;
+    // Get Android version
+    final androidInfo = await DeviceInfoPlugin().androidInfo;
+    final sdkInt = androidInfo.version.sdkInt;
 
-    _logger.i('Current permission states:');
-    _logger.i('  Bluetooth Scan: $bluetoothScan');
-    _logger.i('  Bluetooth Connect: $bluetoothConnect');
-    _logger.i('  Location: $location');
-
-    final allGranted = bluetoothScan.isGranted && 
-                       bluetoothConnect.isGranted && 
-                       location.isGranted;
-
-    if (allGranted) {
-      _logger.i('✅ All Bluetooth permissions are granted');
-    } else {
-      _logger.w('⚠️ Some Bluetooth permissions are missing');
+    // For Android 11 and below, permissions are auto-granted
+    if (sdkInt < 31) {
+      _logger.i('✅ Android < 12: Permissions auto-granted');
+      return true;
     }
 
-    return allGranted;
+    // For Android 12+, check BLUETOOTH_CONNECT
+    final connectStatus = await Permission.bluetoothConnect.status;
+
+    _logger.i('BLUETOOTH_CONNECT status: $connectStatus');
+
+    if (connectStatus.isGranted) {
+      _logger.i('✅ BLUETOOTH_CONNECT is granted');
+      return true;
+    }
+
+    _logger.w('⚠️ BLUETOOTH_CONNECT not granted');
+    return false;
   }
 
   /// Check if any permission is permanently denied
   Future<bool> isAnyPermissionPermanentlyDenied() async {
-    final bluetoothScan = await Permission.bluetoothScan.status;
-    final bluetoothConnect = await Permission.bluetoothConnect.status;
-    final location = await Permission.location.status;
+    // Get Android version
+    final androidInfo = await DeviceInfoPlugin().androidInfo;
+    final sdkInt = androidInfo.version.sdkInt;
 
-    return bluetoothScan.isPermanentlyDenied ||
-           bluetoothConnect.isPermanentlyDenied ||
-           location.isPermanentlyDenied;
+    // For Android 11 and below, no runtime permissions
+    if (sdkInt < 31) {
+      return false;
+    }
+
+    // For Android 12+, check BLUETOOTH_CONNECT
+    final connectStatus = await Permission.bluetoothConnect.status;
+    return connectStatus.isPermanentlyDenied;
   }
 
   /// Open app settings so user can manually grant permissions
   Future<void> openSettings() async {
-    _logger.i('Opening app settings...');
+    _logger.i('🔧 Opening app settings...');
     await openAppSettings();
   }
 }
 
 /// Result of permission request
-enum PermissionResult {
-  granted,
-  denied,
-  permanentlyDenied,
-}
+enum PermissionResult { granted, denied, permanentlyDenied }

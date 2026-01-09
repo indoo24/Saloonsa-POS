@@ -1,3 +1,18 @@
+// ============================================================================
+// ⚠️ DEPRECATED FILE - DO NOT USE
+// ============================================================================
+// This file uses TEXT-BASED ESC/POS printing with charset_converter.
+// It has Arabic encoding issues and printer-specific behavior.
+//
+// REPLACEMENT: Use ImageBasedThermalPrinter instead
+// Location: lib/services/image_based_thermal_printer.dart
+//
+// The new approach renders receipts as images, which:
+// - Works on ALL thermal printer brands
+// - Has NO Arabic encoding issues
+// - Is predictable and stable
+// ============================================================================
+
 import 'dart:typed_data';
 import 'dart:convert';
 import 'package:flutter/services.dart';
@@ -8,9 +23,9 @@ import 'package:charset_converter/charset_converter.dart';
 import 'package:http/http.dart' as http;
 import '../models/invoice_data.dart';
 
-/// Thermal Receipt Generator (ESC/POS Only)
-/// 
-/// Generates ESC/POS byte commands matching the exact receipt format.
+/// ⚠️ DEPRECATED: Use ImageBasedThermalPrinter instead
+/// This uses text-based ESC/POS with charset encoding issues
+@Deprecated('Use ImageBasedThermalPrinter for reliable Arabic printing')
 class ThermalReceiptGenerator {
   /// Generate ESC/POS bytes for thermal printer
   static Future<List<int>> generateThermalReceipt(
@@ -63,9 +78,10 @@ class ThermalReceiptGenerator {
     if (data.logoPath != null) {
       try {
         Uint8List logoBytes;
-        
+
         // Check if network URL or asset path
-        if (data.logoPath!.startsWith('http://') || data.logoPath!.startsWith('https://')) {
+        if (data.logoPath!.startsWith('http://') ||
+            data.logoPath!.startsWith('https://')) {
           // Network image - download it
           final response = await http.get(Uri.parse(data.logoPath!));
           if (response.statusCode == 200) {
@@ -78,7 +94,7 @@ class ThermalReceiptGenerator {
           final logoData = await rootBundle.load(data.logoPath!);
           logoBytes = logoData.buffer.asUint8List();
         }
-        
+
         // Decode and resize image
         final img.Image? image = img.decodeImage(logoBytes);
         if (image != null) {
@@ -102,7 +118,12 @@ class ThermalReceiptGenerator {
   /// Add title - "فاتورة ضريبية مبسطة"
   static Future<void> _addTitle(Generator generator, List<int> bytes) async {
     bytes.addAll(generator.hr(ch: '─'));
-    await _addText(bytes, 'فاتورة ضريبية مبسطة', align: PosAlign.center, bold: true);
+    await _addText(
+      bytes,
+      'فاتورة ضريبية مبسطة',
+      align: PosAlign.center,
+      bold: true,
+    );
     bytes.addAll(generator.hr(ch: '─'));
     bytes.addAll(generator.feed(1));
   }
@@ -113,27 +134,39 @@ class ThermalReceiptGenerator {
     List<int> bytes,
     InvoiceData data,
   ) async {
-    bytes.addAll(generator.text('┌────────────────────────────────────────────┐'));
-    
+    bytes.addAll(
+      generator.text('┌────────────────────────────────────────────┐'),
+    );
+
     // Order number
     await _addTableRow(bytes, 'الفاتورة رقم', data.orderNumber);
-    bytes.addAll(generator.text('├────────────────────────────────────────────┤'));
-    
+    bytes.addAll(
+      generator.text('├────────────────────────────────────────────┤'),
+    );
+
     // Customer name
     final customerName = data.customerName ?? 'عميل كاش';
     await _addTableRow(bytes, 'العميل', customerName);
-    bytes.addAll(generator.text('├────────────────────────────────────────────┤'));
-    
+    bytes.addAll(
+      generator.text('├────────────────────────────────────────────┤'),
+    );
+
     // Date
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(data.dateTime);
     await _addTableRow(bytes, 'التاريخ', dateStr);
-    
-    bytes.addAll(generator.text('└────────────────────────────────────────────┘'));
+
+    bytes.addAll(
+      generator.text('└────────────────────────────────────────────┘'),
+    );
     bytes.addAll(generator.feed(1));
   }
 
   /// Add table row helper (label and value)
-  static Future<void> _addTableRow(List<int> bytes, String label, String value) async {
+  static Future<void> _addTableRow(
+    List<int> bytes,
+    String label,
+    String value,
+  ) async {
     final row = '│ $label                 $value                 │';
     await _addText(bytes, row);
   }
@@ -144,22 +177,28 @@ class ThermalReceiptGenerator {
     List<int> bytes,
     InvoiceData data,
   ) async {
-    bytes.addAll(generator.text('┌────────┬───────────────────────────────────┐'));
+    bytes.addAll(
+      generator.text('┌────────┬───────────────────────────────────┐'),
+    );
     await _addText(bytes, '│ الموظف  │             الخدمة                │');
-    bytes.addAll(generator.text('╞════════╪═══════════════════════════════════╡'));
-    
+    bytes.addAll(
+      generator.text('╞════════╪═══════════════════════════════════╡'),
+    );
+
     // Items with employee names
     for (final item in data.items) {
       final employeeName = item.employeeName ?? 'موظف';
       final serviceName = item.name;
-      
+
       // Create row with proper padding
       final empPad = _padRight(employeeName, 7);
       final svcPad = _padRight(serviceName, 33);
       await _addText(bytes, '│ $empPad│ $svcPad  │');
     }
-    
-    bytes.addAll(generator.text('└────────┴───────────────────────────────────┘'));
+
+    bytes.addAll(
+      generator.text('└────────┴───────────────────────────────────┘'),
+    );
     bytes.addAll(generator.feed(1));
   }
 
@@ -171,48 +210,72 @@ class ThermalReceiptGenerator {
   ) async {
     await _addText(bytes, 'تفاصير المبالغ', align: PosAlign.center, bold: true);
     bytes.addAll(generator.feed(1));
-    
-    bytes.addAll(generator.text('┌────────────────────────┬───────────────────┐'));
+
+    bytes.addAll(
+      generator.text('┌────────────────────────┬───────────────────┐'),
+    );
     await _addText(bytes, '│      اسم الحساب        │      المبلغ       │');
-    bytes.addAll(generator.text('╞════════════════════════╪═══════════════════╡'));
-    
+    bytes.addAll(
+      generator.text('╞════════════════════════╪═══════════════════╡'),
+    );
+
     // Service prices
     for (final item in data.items) {
       final serviceName = _padRight(item.name, 22);
       final price = _padLeft('ر.س ${item.price.toStringAsFixed(2)}', 17);
       await _addText(bytes, '│ $serviceName│ $price │');
     }
-    
-    bytes.addAll(generator.text('├────────────────────────┼───────────────────┤'));
-    
+
+    bytes.addAll(
+      generator.text('├────────────────────────┼───────────────────┤'),
+    );
+
     // Subtotal before discount
-    final subtotal = _padLeft('ر.س ${data.subtotalBeforeTax.toStringAsFixed(2)}', 17);
+    final subtotal = _padLeft(
+      'ر.س ${data.subtotalBeforeTax.toStringAsFixed(2)}',
+      17,
+    );
     await _addText(bytes, '│ مجموع السلع قبل الخصم  │ $subtotal │');
-    
-    bytes.addAll(generator.text('├────────────────────────┼───────────────────┤'));
-    
+
+    bytes.addAll(
+      generator.text('├────────────────────────┼───────────────────┤'),
+    );
+
     // Discount (if any)
     if (data.hasDiscount) {
-      final discountLabel = 'الخصم (${data.discountPercentage.toStringAsFixed(0)}%)';
+      final discountLabel =
+          'الخصم (${data.discountPercentage.toStringAsFixed(0)}%)';
       final discountLabelPad = _padRight(discountLabel, 22);
-      final discountAmount = _padLeft('ر.س ${data.discountAmount.toStringAsFixed(2)}', 17);
+      final discountAmount = _padLeft(
+        'ر.س ${data.discountAmount.toStringAsFixed(2)}',
+        17,
+      );
       await _addText(bytes, '│ $discountLabelPad│ $discountAmount │');
-      bytes.addAll(generator.text('├────────────────────────┼───────────────────┤'));
+      bytes.addAll(
+        generator.text('├────────────────────────┼───────────────────┤'),
+      );
     }
-    
+
     // Total after discount (المجموع)
-    final afterDiscount = _padLeft('ر.س ${data.amountAfterDiscount.toStringAsFixed(2)}', 17);
+    final afterDiscount = _padLeft(
+      'ر.س ${data.amountAfterDiscount.toStringAsFixed(2)}',
+      17,
+    );
     await _addText(bytes, '│ المجموع                │ $afterDiscount │');
-    
-    bytes.addAll(generator.text('├────────────────────────┼───────────────────┤'));
-    
+
+    bytes.addAll(
+      generator.text('├────────────────────────┼───────────────────┤'),
+    );
+
     // Tax
     final taxLabel = 'الضريبة ${data.taxRate.toStringAsFixed(0)}%';
     final taxLabelPad = _padRight(taxLabel, 22);
     final taxAmount = _padLeft('ر.س ${data.taxAmount.toStringAsFixed(2)}', 17);
     await _addText(bytes, '│ $taxLabelPad│ $taxAmount │');
-    
-    bytes.addAll(generator.text('└────────────────────────┴───────────────────┘'));
+
+    bytes.addAll(
+      generator.text('└────────────────────────┴───────────────────┘'),
+    );
     bytes.addAll(generator.feed(1));
   }
 
@@ -222,34 +285,49 @@ class ThermalReceiptGenerator {
     List<int> bytes,
     InvoiceData data,
   ) async {
-    await _addText(bytes, 'اجمالي المبلغات', align: PosAlign.center, bold: true);
+    await _addText(
+      bytes,
+      'اجمالي المبلغات',
+      align: PosAlign.center,
+      bold: true,
+    );
     bytes.addAll(generator.feed(1));
-    
+
     // Grand total box
-    bytes.addAll(generator.text('┌────────────────────────────────────────────┐'));
+    bytes.addAll(
+      generator.text('┌────────────────────────────────────────────┐'),
+    );
     await _addText(bytes, '│ اجمالي المبلغ الشامل للضريبة              │');
-    
+
     final grandTotal = 'ر.س ${data.grandTotal.toStringAsFixed(2)}';
     final grandTotalPad = _padLeft(grandTotal, 20);
     await _addText(bytes, '│         $grandTotalPad          │', bold: true);
-    
-    bytes.addAll(generator.text('└────────────────────────────────────────────┘'));
+
+    bytes.addAll(
+      generator.text('└────────────────────────────────────────────┘'),
+    );
     bytes.addAll(generator.feed(1));
-    
+
     // Payment method and amounts
-    bytes.addAll(generator.text('┌────────────────────────────────────────────┐'));
-    
+    bytes.addAll(
+      generator.text('┌────────────────────────────────────────────┐'),
+    );
+
     final paymentMethod = _padLeft(data.paymentMethod, 32);
     await _addText(bytes, '│ طريقة الدفع: $paymentMethod│');
-    
-    bytes.addAll(generator.text('├────────────────────────────────────────────┤'));
-    
+
+    bytes.addAll(
+      generator.text('├────────────────────────────────────────────┤'),
+    );
+
     if (data.paidAmount != null) {
       final paid = _padLeft('ر.س ${data.paidAmount!.toStringAsFixed(2)}', 30);
       await _addText(bytes, '│ الرصيد       $paid│');
     }
-    
-    bytes.addAll(generator.text('└────────────────────────────────────────────┘'));
+
+    bytes.addAll(
+      generator.text('└────────────────────────────────────────────┘'),
+    );
     bytes.addAll(generator.feed(1));
   }
 
@@ -261,7 +339,8 @@ class ThermalReceiptGenerator {
   ) async {
     try {
       final timestamp = DateFormat('yyyy-MM-dd HH:mm:ss').format(data.dateTime);
-      final qrData = 'Seller: ${data.businessName}\n'
+      final qrData =
+          'Seller: ${data.businessName}\n'
           'VAT: ${data.taxNumber ?? "N/A"}\n'
           'Time: $timestamp\n'
           'Total: ${data.grandTotal.toStringAsFixed(2)} SAR\n'

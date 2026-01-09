@@ -5,30 +5,32 @@ import 'dart:ui' as ui;
 import '../models/invoice_data.dart';
 
 /// Thermal Receipt Image Widget
-/// 
+///
 /// Renders InvoiceData as a Flutter widget for off-screen rendering to image.
-/// This is specifically designed for image-based thermal printing on Sunmi V2
-/// to support Arabic text which the printer cannot render via ESC/POS text commands.
-/// 
+/// This is the UNIVERSAL widget for image-based thermal printing on ALL thermal printers.
+/// Arabic text is rendered as part of the image, eliminating encoding issues.
+///
 /// Specifications:
-/// - Width: 384px (exact Sunmi V2 thermal printer width for 58mm paper)
+/// - Width: 384px (58mm) or 576px (80mm) based on paper size
 /// - RTL layout for Arabic text
 /// - Google Fonts Cairo for Arabic rendering
 /// - Pure black text on white background for optimal thermal printing
 /// - No scrolling (dynamic height wraps content)
-/// - Layout matches existing receipt preview exactly
+/// - Works on ALL thermal printer brands (Sunmi, Xprinter, Rongta, Gprinter, etc.)
 class ThermalReceiptImageWidget extends StatelessWidget {
   final InvoiceData data;
+  final double widthPx;
 
   const ThermalReceiptImageWidget({
     super.key,
     required this.data,
+    this.widthPx = 384, // Default: 58mm paper (384px)
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 384, // Sunmi V2 exact width for 58mm thermal paper
+      width: widthPx,
       color: Colors.white,
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -38,27 +40,27 @@ class ThermalReceiptImageWidget extends StatelessWidget {
           // 1. HEADER - Business Info
           _buildHeader(),
           const SizedBox(height: 16),
-          
+
           // 2. TITLE - "فاتورة ضريبية مبسطة"
           _buildTitle(),
           const SizedBox(height: 16),
-          
+
           // 3. ORDER INFO
           _buildOrderInfo(),
           const SizedBox(height: 16),
-          
+
           // 4. EMPLOYEE & SERVICES
           _buildEmployeeSection(),
           const SizedBox(height: 16),
-          
+
           // 5. FINANCIAL DETAILS
           _buildFinancialDetails(),
           const SizedBox(height: 16),
-          
+
           // 6. TOTALS SUMMARY
           _buildTotalsSummary(),
           const SizedBox(height: 16),
-          
+
           // 7. FOOTER
           _buildFooter(),
         ],
@@ -151,9 +153,7 @@ class ThermalReceiptImageWidget extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Expanded(
-          child: _buildText(label, fontSize: 12, bold: true),
-        ),
+        Expanded(child: _buildText(label, fontSize: 12, bold: true)),
         Expanded(
           child: _buildText(value, fontSize: 12, textAlign: TextAlign.left),
         ),
@@ -185,11 +185,21 @@ class ThermalReceiptImageWidget extends StatelessWidget {
                 ),
                 Expanded(
                   flex: 1,
-                  child: _buildText('الموظف', fontSize: 12, bold: true, textAlign: TextAlign.center),
+                  child: _buildText(
+                    'الموظف',
+                    fontSize: 12,
+                    bold: true,
+                    textAlign: TextAlign.center,
+                  ),
                 ),
                 Expanded(
                   flex: 1,
-                  child: _buildText('السعر', fontSize: 12, bold: true, textAlign: TextAlign.left),
+                  child: _buildText(
+                    'السعر',
+                    fontSize: 12,
+                    bold: true,
+                    textAlign: TextAlign.left,
+                  ),
                 ),
               ],
             ),
@@ -199,7 +209,7 @@ class ThermalReceiptImageWidget extends StatelessWidget {
             final index = entry.key;
             final item = entry.value;
             final employeeName = item.employeeName ?? 'موظف';
-            
+
             return Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
@@ -209,13 +219,14 @@ class ThermalReceiptImageWidget extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  Expanded(
-                    flex: 2,
-                    child: _buildText(item.name, fontSize: 11),
-                  ),
+                  Expanded(flex: 2, child: _buildText(item.name, fontSize: 11)),
                   Expanded(
                     flex: 1,
-                    child: _buildText(employeeName, fontSize: 11, textAlign: TextAlign.center),
+                    child: _buildText(
+                      employeeName,
+                      fontSize: 11,
+                      textAlign: TextAlign.center,
+                    ),
                   ),
                   Expanded(
                     flex: 1,
@@ -244,15 +255,17 @@ class ThermalReceiptImageWidget extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _buildText('تفاصيل المبالغ', fontSize: 14, bold: true, textAlign: TextAlign.center),
-          const SizedBox(height: 8),
-          
-          // Subtotal before discount
-          _buildAmountRow(
-            'مجموع السلع قبل الخصم',
-            data.subtotalBeforeTax,
+          _buildText(
+            'تفاصيل المبالغ',
+            fontSize: 14,
+            bold: true,
+            textAlign: TextAlign.center,
           ),
-          
+          const SizedBox(height: 8),
+
+          // Subtotal before discount
+          _buildAmountRow('مجموع السلع قبل الخصم', data.subtotalBeforeTax),
+
           // Discount (if any)
           if (data.hasDiscount) ...[
             const Divider(color: Colors.black, height: 12),
@@ -262,15 +275,11 @@ class ThermalReceiptImageWidget extends StatelessWidget {
               isNegative: true,
             ),
           ],
-          
+
           // Total after discount
           const Divider(color: Colors.black, height: 12),
-          _buildAmountRow(
-            'المجموع',
-            data.amountAfterDiscount,
-            bold: true,
-          ),
-          
+          _buildAmountRow('المجموع', data.amountAfterDiscount, bold: true),
+
           // Tax
           const Divider(color: Colors.black, height: 12),
           _buildAmountRow(
@@ -283,15 +292,20 @@ class ThermalReceiptImageWidget extends StatelessWidget {
   }
 
   /// Build amount row helper
-  Widget _buildAmountRow(String label, double amount, {bool bold = false, bool isNegative = false}) {
-    final displayAmount = isNegative ? '-ر.س ${amount.toStringAsFixed(2)}' : 'ر.س ${amount.toStringAsFixed(2)}';
-    
+  Widget _buildAmountRow(
+    String label,
+    double amount, {
+    bool bold = false,
+    bool isNegative = false,
+  }) {
+    final displayAmount = isNegative
+        ? '-ر.س ${amount.toStringAsFixed(2)}'
+        : 'ر.س ${amount.toStringAsFixed(2)}';
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Expanded(
-          child: _buildText(label, fontSize: 12, bold: bold),
-        ),
+        Expanded(child: _buildText(label, fontSize: 12, bold: bold)),
         _buildText(displayAmount, fontSize: 12, bold: bold),
       ],
     );
@@ -324,19 +338,25 @@ class ThermalReceiptImageWidget extends StatelessWidget {
           const SizedBox(height: 12),
           const Divider(color: Colors.black),
           const SizedBox(height: 8),
-          
+
           // Payment method
           _buildInfoRow('طريقة الدفع', data.paymentMethod),
-          
+
           // Payment details
           if (data.paidAmount != null) ...[
             const SizedBox(height: 4),
-            _buildInfoRow('المدفوع', 'ر.س ${data.paidAmount!.toStringAsFixed(2)}'),
+            _buildInfoRow(
+              'المدفوع',
+              'ر.س ${data.paidAmount!.toStringAsFixed(2)}',
+            ),
           ],
-          
+
           if (data.remainingAmount != null && data.remainingAmount! != 0) ...[
             const SizedBox(height: 4),
-            _buildInfoRow('الباقي', 'ر.س ${data.remainingAmount!.toStringAsFixed(2)}'),
+            _buildInfoRow(
+              'الباقي',
+              'ر.س ${data.remainingAmount!.toStringAsFixed(2)}',
+            ),
           ],
         ],
       ),
@@ -362,11 +382,7 @@ class ThermalReceiptImageWidget extends StatelessWidget {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 4),
-        _buildText(
-          'نسعد بخدمتكم',
-          fontSize: 10,
-          textAlign: TextAlign.center,
-        ),
+        _buildText('نسعد بخدمتكم', fontSize: 10, textAlign: TextAlign.center),
       ],
     );
   }
